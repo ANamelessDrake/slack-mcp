@@ -47,7 +47,11 @@ class LambdaFunctionsStack(Stack):
                     "-c",
                     " && ".join(
                         [
-                            "pip install -r mcpServer/requirements.txt -t /asset-output",
+                            # The function is arm64 but the bundling container matches
+                            # the host, so pin pip to aarch64 wheels explicitly.
+                            "pip install -r mcpServer/requirements.txt -t /asset-output"
+                            " --platform manylinux2014_aarch64 --implementation cp"
+                            " --python-version 3.12 --only-binary=:all:",
                             "cp -r mcpServer/. /asset-output/",
                             "cp -r sharedModules /asset-output/sharedModules",
                             "chmod +x /asset-output/run.sh",
