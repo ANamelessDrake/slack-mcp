@@ -1,0 +1,7 @@
+{
+	"app": "python3 bin/app.py",
+	"context": {
+		"@aws-cdk/core:newStyleStackSynthesis": true,
+		"@aws-cdk/core:defaultCrossStackReferences": "strong"
+	}
+}

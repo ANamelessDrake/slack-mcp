@@ -1,0 +1,14 @@
+{
+  "account": "111111111111",
+  "region": "us-east-1",
+  "environment_name": "dev",
+  "environment_name_upper": "Dev",
+  "project_name": "slackmcp",
+  "project_name_upper": "SlackMcp",
+  "alarm_email": "you@example.com",
+  "default_agent_id": "claude",
+  "agents": [
+    { "id": "claude", "display_name": "Claude" },
+    { "id": "wilma", "display_name": "WILMA" }
+  ]
+}

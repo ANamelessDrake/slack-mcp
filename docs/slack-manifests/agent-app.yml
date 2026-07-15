@@ -1,0 +1,20 @@
+# Template for one agent app. Create one Slack app per agent (replace AGENT_NAME),
+# so each agent has its own real, mention-able bot identity in the workspace.
+# Send-only: no event subscriptions, no read scopes (the relay app handles reads).
+display_information:
+  name: AGENT_NAME
+  description: LLM agent posting via slack-mcp
+  background_color: "#4a154b"
+features:
+  bot_user:
+    display_name: AGENT_NAME
+    always_online: false
+oauth_config:
+  scopes:
+    bot:
+      - chat:write
+      - im:write
+settings:
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false

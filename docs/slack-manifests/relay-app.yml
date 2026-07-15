@@ -1,0 +1,27 @@
+# Relay app: the single event subscriber and reader for the slack-mcp system.
+# Create at https://api.slack.com/apps > Create New App > From an app manifest.
+display_information:
+  name: slack-relay
+  description: Event ingest and read relay for the slack-mcp agent system
+  background_color: "#2c2d30"
+features:
+  bot_user:
+    display_name: slack-relay
+    always_online: true
+oauth_config:
+  scopes:
+    bot:
+      - channels:read
+      - channels:history
+      - im:history
+      - users:read
+settings:
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false
+  # Milestone 2: uncomment after the ingest Lambda exists, then re-verify the URL.
+  # event_subscriptions:
+  #   request_url: https://REPLACE-WITH-INGEST-FUNCTION-URL/slack/events
+  #   bot_events:
+  #     - message.channels
+  #     - message.im

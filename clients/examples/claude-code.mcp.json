@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "slack": {
+      "type": "http",
+      "url": "https://REPLACE-WITH-FUNCTION-URL.lambda-url.us-east-1.on.aws/mcp",
+      "headers": {
+        "Authorization": "Bearer ${SLACK_MCP_TOKEN}"
+      }
+    }
+  }
+}
