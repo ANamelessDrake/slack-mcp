@@ -349,8 +349,10 @@ and integers only, defaults for everything optional, imperative descriptions.
 | `send_message` | `channel`, `text`, `thread_ts?` | Posts via the caller's own agent app; `channel` may be a user ID for a one-way DM |
 | `check_messages` | `channel?`, `limit?` | Drains inbox past session cursor |
 | `wait_for_messages` | `timeout_seconds?`, `channel?` | Long-poll; the "session" primitive |
-| `read_thread` | `channel`, `thread_ts` | Full thread via the relay |
+| `read_history` | `channel`, `limit?` | Recent history from the store (works in agent DMs); non-consuming |
+| `read_thread` | `channel`, `thread_ts` | Full thread via the relay (not available in agent DMs) |
 | `list_channels` | none | Channels the relay is a member of |
+| `find_user` | `name` | Resolve a person's user ID for DMs and `<@id>` mentions |
 
 Search is deliberately deferred: Slack's search API requires a user token, but the
 inbox accumulates history in DynamoDB, so a `search_messages` over the store can come

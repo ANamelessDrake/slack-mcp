@@ -123,11 +123,13 @@ Then just talk: "send a message to the test channel", "any new Slack messages?",
 
 | Tool | Parameters | What it does |
 |---|---|---|
-| `send_message` | `channel`, `text`, `thread_ts?` | Post to a channel or thread; `channel` may be a user ID for a DM |
+| `send_message` | `channel`, `text`, `thread_ts?` | Post to a channel, thread, or person (user ID = DM); supports real @mentions via `<@USERID>`; first DM contact auto-appends a reply-expectations note |
 | `check_messages` | `channel?`, `limit?` | Return everything new since the last check (cursor-based) |
 | `wait_for_messages` | `timeout_seconds?`, `channel?` | Block until the next message arrives or the timeout passes |
+| `read_history` | `channel`, `limit?` | Recent conversation history (channels and DMs), without marking anything read |
 | `read_thread` | `channel`, `thread_ts`, `limit?` | Read a full thread |
 | `list_channels` | none | Channels the system can see, with membership flags |
+| `find_user` | `name` | Look up a person's user ID by name, for DMs and @mentions |
 
 Tool schemas are deliberately flat (strings and ints, defaults everywhere) so small
 local models can drive them reliably, not just frontier models.
