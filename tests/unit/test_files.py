@@ -144,6 +144,44 @@ def test_download_file_builds_absolute_url_and_curl(table):
     identity.set_base_url("")
 
 
+def test_hostile_filenames_are_defanged():
+    # The uploader picks the filename, so these are realistic inputs
+    assert files.safe_filename('"; rm -rf ~; echo "', "F1") == "___rm_-rf____echo__"
+    # Separators become underscores, so the result cannot traverse anywhere
+    assert files.safe_filename("../../etc/passwd", "F1") == "_.._etc_passwd"
+    assert files.safe_filename("evil\r\nX-Injected: yes", "F1") == "evil__X-Injected__yes"
+    assert files.safe_filename("$(whoami).png", "F1") == "__whoami_.png"
+    assert files.safe_filename("...", "F1") == "F1"
+    assert files.safe_filename("", "F1") == "F1"
+    assert len(files.safe_filename("a" * 500, "F1")) == 64
+    assert files.safe_filename("report_v2.final.pdf", "F1") == "report_v2.final.pdf"
+
+
+def test_curl_command_is_inert_with_hostile_filename(table):
+    _seed_file(
+        table,
+        file_id="F9",
+        name='"; rm -rf ~; echo "pwned.pdf',
+        mimetype="application/pdf",
+        size=10,
+    )
+    identity.set_base_url("https://example.lambda-url.us-east-1.on.aws/")
+    try:
+        result = df.download_file("F9")
+    finally:
+        identity.set_base_url("")
+
+    cmd = result["curl_command"]
+    # Shell metacharacters from the upload never reach the command unquoted
+    assert "rm -rf" not in cmd
+    assert ";" not in cmd
+    assert result["suggested_filename"] == "___rm_-rf____echo__pwned.pdf"
+    # The real name still travels as inert data for the model to see
+    assert result["name"] == '"; rm -rf ~; echo "pwned.pdf'
+    # The token stays a client-side shell reference, never the server's value
+    assert "$SLACK_MCP_TOKEN" in cmd
+
+
 def test_download_file_flags_oversize(table, monkeypatch):
     monkeypatch.setenv("MAX_FILE_DOWNLOAD_MB", "1")
     _seed_file(table, file_id="F8", name="big.zip", mimetype="application/zip", size=9 * 1048576)

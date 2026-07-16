@@ -14,7 +14,14 @@ import logging
 from auth.bearer import BearerAuthMiddleware
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
-from sharedModules.files import FileTooLarge, FileUnknown, fetch_bytes, get_file_record
+from sharedModules.files import (
+    FileTooLarge,
+    FileUnknown,
+    fetch_bytes,
+    get_file_record,
+    is_image,
+    safe_filename,
+)
 from starlette.responses import PlainTextResponse, Response
 from starlette.routing import Route
 from tools import register_all
@@ -52,11 +59,19 @@ async def serve_file(request):
     except FileTooLarge as e:
         return PlainTextResponse(str(e), status_code=413)
 
-    name = str(record.get("name", file_id)).replace('"', "")
+    # The uploader controls both the filename and the reported mimetype, so
+    # neither is echoed back raw: a name could inject headers, and serving an
+    # uploaded text/html from this origin would make it executable in a browser.
+    name = safe_filename(str(record.get("name", "")), file_id)
+    mimetype = str(record.get("mimetype") or "")
     return Response(
         content=data,
-        media_type=str(record.get("mimetype") or "application/octet-stream"),
-        headers={"Content-Disposition": f'attachment; filename="{name}"'},
+        media_type=mimetype if is_image(mimetype) else "application/octet-stream",
+        headers={
+            "Content-Disposition": f'attachment; filename="{name}"',
+            "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "default-src 'none'; sandbox",
+        },
     )
 
 

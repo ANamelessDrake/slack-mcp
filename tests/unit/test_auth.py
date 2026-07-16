@@ -55,6 +55,34 @@ def test_get_stream_refused_405(client):
     assert resp.headers["Allow"] == "POST"
 
 
+def test_file_route_requires_auth(client):
+    assert client.get("/files/F1").status_code == 401
+
+
+def test_file_route_neutralizes_hostile_metadata(client, monkeypatch):
+    import app as app_module
+
+    record = {
+        "name": 'evil\r\nX-Injected: yes"; rm -rf ~.html',
+        "mimetype": "text/html",
+        "url_private": "https://files.slack.com/F1",
+        "size": 5,
+    }
+    monkeypatch.setattr(app_module, "get_file_record", lambda fid: record)
+    monkeypatch.setattr(app_module, "fetch_bytes", lambda rec: b"<script>alert(1)</script>")
+
+    resp = client.get("/files/F1", headers=AUTH)
+
+    assert resp.status_code == 200
+    # Uploaded HTML is never served as HTML from this origin
+    assert resp.headers["content-type"] == "application/octet-stream"
+    assert resp.headers["x-content-type-options"] == "nosniff"
+    disposition = resp.headers["content-disposition"]
+    assert "X-Injected" not in resp.headers
+    assert "\r" not in disposition and "\n" not in disposition
+    assert disposition == 'attachment; filename="evil__X-Injected__yes___rm_-rf__.html"'
+
+
 def test_mcp_initialize_with_valid_token(client):
     resp = client.post("/mcp", json=INITIALIZE, headers={**MCP_HEADERS, **AUTH})
     assert resp.status_code == 200

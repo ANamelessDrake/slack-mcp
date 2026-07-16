@@ -15,10 +15,13 @@ Two guardrails live here (DESIGN.md section 8):
 """
 
 import os
+import re
 import urllib.request
 from functools import lru_cache
 
 from sharedModules.dynamo import messages_table
+
+_UNSAFE_FILENAME = re.compile(r"[^A-Za-z0-9._-]")
 
 TEXT_MIME_PREFIXES = ("text/",)
 TEXT_MIME_EXACT = {
@@ -51,6 +54,19 @@ def is_text(mimetype: str) -> bool:
 
 def is_image(mimetype: str) -> bool:
     return mimetype.startswith("image/") and not mimetype.endswith("svg+xml")
+
+
+def safe_filename(name: str, fallback: str) -> str:
+    """A filename safe to place in a shell command or an HTTP header.
+
+    Slack filenames are attacker-controlled: whoever uploads a file to a watched
+    conversation chooses the name, so it can carry shell metacharacters, path
+    traversal, quotes, or CRLF. Collapse to a conservative charset, drop leading
+    dots (hidden files and `..`), and cap the length. Non-ASCII names degrade to
+    underscores, which is the intended trade for inertness.
+    """
+    cleaned = _UNSAFE_FILENAME.sub("_", name or "").lstrip(".")[:64]
+    return cleaned or fallback
 
 
 @lru_cache(maxsize=1)
