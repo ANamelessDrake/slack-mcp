@@ -45,8 +45,9 @@ flowchart LR
 
 Serverless throughout: two Lambdas, one DynamoDB table, one AppSync Events API,
 Secrets Manager for every credential. Runs comfortably inside a few dollars a month at
-personal scale. Full design rationale, data model, and threat notes in
-[DESIGN.md](DESIGN.md).
+personal scale. Full diagrams (the live round-trip sequence, trust boundaries, the
+Slack app identity model) in [docs/architecture.md](docs/architecture.md); design
+rationale, data model, and threat notes in [DESIGN.md](DESIGN.md).
 
 The workspace runs N+1 internal Slack apps: one **relay** app that subscribes to
 events and performs reads, plus one send-only app per agent, so each agent has its own
