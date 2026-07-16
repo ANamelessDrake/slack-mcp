@@ -9,7 +9,15 @@
   "message_retention_days": 30,
   "default_agent_id": "claude",
   "agents": [
-    { "id": "claude", "display_name": "Claude" },
-    { "id": "wilma", "display_name": "WILMA" }
-  ]
+    {
+      "id": "claude",
+      "display_name": "Claude"
+    },
+    {
+      "id": "wilma",
+      "display_name": "WILMA"
+    }
+  ],
+  "agent_turn_budget": 6,
+  "agent_cooldown_seconds": 3
 }

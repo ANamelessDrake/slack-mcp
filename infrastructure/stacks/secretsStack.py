@@ -41,8 +41,14 @@ class SecretsStack(Stack):
 
         self.agent_bot_tokens: dict[str, secretsmanager.Secret] = {}
         self.agent_signing_secrets: dict[str, secretsmanager.Secret] = {}
+        self.agent_mcp_tokens: dict[str, secretsmanager.Secret] = {}
         for agent in config["agents"]:
             agent_id = agent["id"]
+            # Generated at deploy; the MCP bearer token that resolves to this agent
+            self.agent_mcp_tokens[agent_id] = self._secret(
+                f"{prefix}-McpToken-{agent_id}",
+                f"MCP bearer token mapped to the '{agent_id}' agent identity",
+            )
             self.agent_bot_tokens[agent_id] = self._secret(
                 f"{prefix}-BotToken-{agent_id}",
                 f"Bot token (xoxb-) for the '{agent['display_name']}' agent Slack app",

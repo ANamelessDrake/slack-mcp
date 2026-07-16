@@ -36,9 +36,14 @@ class FakeClient:
         return self._call("users.list", **kwargs)
 
 
+def _no_veto(monkeypatch):
+    monkeypatch.setattr(sm, "agent_send_veto", lambda *a: None)
+
+
 def test_send_message_posts_and_returns_ts(monkeypatch):
     fake = FakeClient(response={"channel": "C123", "ts": "1700000000.000100"})
     monkeypatch.setattr(sm, "agent_client", lambda agent_id: fake)
+    _no_veto(monkeypatch)
 
     result = sm.send_message("C123", "hello world")
 
@@ -55,6 +60,7 @@ def test_send_message_posts_and_returns_ts(monkeypatch):
 
 
 def test_send_message_passes_thread_ts(monkeypatch):
+    _no_veto(monkeypatch)
     fake = FakeClient(response={"channel": "C123", "ts": "2.0"})
     monkeypatch.setattr(sm, "agent_client", lambda agent_id: fake)
 
@@ -65,6 +71,7 @@ def test_send_message_passes_thread_ts(monkeypatch):
 
 
 def test_send_message_returns_slack_error(monkeypatch):
+    _no_veto(monkeypatch)
     error = SlackApiError("boom", {"error": "channel_not_found"})
     monkeypatch.setattr(sm, "agent_client", lambda agent_id: FakeClient(error=error))
 
@@ -75,6 +82,7 @@ def test_send_message_returns_slack_error(monkeypatch):
 
 
 def test_first_dm_by_user_id_adds_intro_note_and_registers(monkeypatch):
+    _no_veto(monkeypatch)
     fake = FakeClient(response={"channel": "D0NEW", "ts": "5.0"})
     registered = []
     monkeypatch.setattr(sm, "agent_client", lambda agent_id: fake)
@@ -93,6 +101,7 @@ def test_first_dm_by_user_id_adds_intro_note_and_registers(monkeypatch):
 
 
 def test_known_dm_gets_no_intro_note(monkeypatch):
+    _no_veto(monkeypatch)
     fake = FakeClient(response={"channel": "D0OLD", "ts": "6.0"})
     monkeypatch.setattr(sm, "agent_client", lambda agent_id: fake)
     monkeypatch.setattr(sm, "channel_known", lambda ch: True)
@@ -104,6 +113,7 @@ def test_known_dm_gets_no_intro_note(monkeypatch):
 
 
 def test_channel_message_never_gets_intro_note(monkeypatch):
+    _no_veto(monkeypatch)
     fake = FakeClient(response={"channel": "C123", "ts": "7.0"})
     monkeypatch.setattr(sm, "agent_client", lambda agent_id: fake)
     monkeypatch.setattr(
@@ -114,6 +124,17 @@ def test_channel_message_never_gets_intro_note(monkeypatch):
 
     _, kwargs = fake.calls[0]
     assert kwargs["text"] == "channel note"
+
+
+def test_guardrail_veto_blocks_send(monkeypatch):
+    fake = FakeClient(response={"channel": "C123", "ts": "8.0"})
+    monkeypatch.setattr(sm, "agent_client", lambda agent_id: fake)
+    monkeypatch.setattr(sm, "agent_send_veto", lambda *a: "Turn budget reached")
+
+    result = sm.send_message("C123", "one more thing")
+
+    assert result == {"ok": False, "error": "Turn budget reached"}
+    assert all(method != "chat.postMessage" for method, _ in fake.calls)
 
 
 def test_find_user_matches_and_paginates(monkeypatch):

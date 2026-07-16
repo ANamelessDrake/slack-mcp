@@ -202,6 +202,22 @@ def test_accepts_signature_from_any_known_app_secret(ingest, monkeypatch):
     assert resp["statusCode"] == 401
 
 
+def test_mentions_route_to_registered_agents(ingest):
+    table = boto3.resource("dynamodb", region_name="us-east-1").Table("test-messages")
+    table.put_item(
+        Item={"PK": "AGENTS", "SK": "AGENT#claude", "agent_id": "claude",
+              "bot_user_id": "U0CLAUDEBOT"}
+    )
+    ingest._AGENT_BY_BOT_USER = None  # drop per-container cache
+
+    body = _message_callback(text="<@U0CLAUDEBOT> and <@U0RANDOM> please look")
+    ingest.handler(_signed_event(body), None)
+
+    item = _items()[0]
+    assert item["mentions"] == ["U0CLAUDEBOT", "U0RANDOM"]
+    assert item["mentions_agents"] == ["claude"]
+
+
 def test_channel_registry_tracks_conversations(ingest):
     ingest.handler(_signed_event(_message_callback(channel="C123")), None)
     ingest.handler(_signed_event(_message_callback(channel="D0DM99", ts="2.0")), None)

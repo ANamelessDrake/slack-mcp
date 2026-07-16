@@ -82,7 +82,11 @@ class LambdaFunctionsStack(Stack):
                 "RELAY_BOT_TOKEN_SECRET": secrets.relay_bot_token.secret_name,
                 "DEV_BEARER_TOKEN_SECRET": secrets.dev_bearer_token.secret_name,
                 "AGENT_TOKEN_SECRET_PREFIX": f"{secret_prefix}-BotToken-",
+                "MCP_TOKEN_SECRET_PREFIX": f"{secret_prefix}-McpToken-",
+                "AGENT_IDS": ",".join(a["id"] for a in config["agents"]),
                 "DEFAULT_AGENT_ID": config["default_agent_id"],
+                "AGENT_TURN_BUDGET": str(config.get("agent_turn_budget", 6)),
+                "AGENT_COOLDOWN_SECONDS": str(config.get("agent_cooldown_seconds", 3)),
                 "MESSAGES_TABLE": database.messages_table.table_name,
                 # API key in env is a dev-stage tradeoff (visible in the CFN
                 # template); the hardening path is IAM-signed pub/sub.
@@ -95,6 +99,8 @@ class LambdaFunctionsStack(Stack):
         secrets.relay_bot_token.grant_read(self.mcp_function)
         secrets.dev_bearer_token.grant_read(self.mcp_function)
         for secret in secrets.agent_bot_tokens.values():
+            secret.grant_read(self.mcp_function)
+        for secret in secrets.agent_mcp_tokens.values():
             secret.grant_read(self.mcp_function)
         database.messages_table.grant_read_write_data(self.mcp_function)
 

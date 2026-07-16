@@ -1,5 +1,7 @@
 from sharedModules.dynamo import channel_known, register_channel
-from sharedModules.slack import agent_client, default_agent_id
+from sharedModules.guardrails import agent_send_veto
+from sharedModules.identity import current_agent_id
+from sharedModules.slack import agent_client
 from slack_sdk.errors import SlackApiError
 
 # Appended automatically to the first message an agent ever sends into a DM
@@ -30,7 +32,7 @@ def send_message(channel: str, text: str, thread_ts: str = "") -> dict:
     sent into a DM automatically includes a note telling the person when their
     replies will be seen.
     """
-    agent_id = default_agent_id()
+    agent_id = current_agent_id()
     client = agent_client(agent_id)
     target = channel
 
@@ -38,6 +40,10 @@ def send_message(channel: str, text: str, thread_ts: str = "") -> dict:
         # A user ID means "DM this person": resolve to their DM conversation
         if channel[:1] in ("U", "W") and channel[1:2].isalnum():
             target = client.conversations_open(users=channel)["channel"]["id"]
+
+        veto = agent_send_veto(target, thread_ts, agent_id)
+        if veto:
+            return {"ok": False, "error": veto}
 
         first_dm_contact = (
             target.startswith("D") and not thread_ts and not channel_known(target)

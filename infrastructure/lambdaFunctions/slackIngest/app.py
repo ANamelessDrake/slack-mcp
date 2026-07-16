@@ -50,6 +50,7 @@ def _message_expiry() -> int | None:
 
 _TABLE = None
 _USER_NAMES: dict[str, str] = {}
+_AGENT_BY_BOT_USER: dict[str, str] | None = None
 
 
 def _table():
@@ -123,6 +124,23 @@ def _resolve_user_name(user_id: str) -> str:
         )
     _USER_NAMES[user_id] = name
     return name
+
+
+def _agent_mention_map() -> dict[str, str]:
+    """bot_user_id -> agent_id, from the AGENTS registry (scripts/admin.py).
+    Lets @mentions of agent bots route to agent identities. Cached per
+    container; registering a new agent picks up on container recycle."""
+    global _AGENT_BY_BOT_USER
+    if _AGENT_BY_BOT_USER is None:
+        from boto3.dynamodb.conditions import Key
+
+        resp = _table().query(KeyConditionExpression=Key("PK").eq("AGENTS"))
+        _AGENT_BY_BOT_USER = {
+            item["bot_user_id"]: item["agent_id"]
+            for item in resp.get("Items", [])
+            if item.get("bot_user_id")
+        }
+    return _AGENT_BY_BOT_USER
 
 
 def _valid_signature(headers: dict, body: str) -> bool:
@@ -228,6 +246,9 @@ def handler(event, _context):
         "agent_id": agent_id,
         "mentions": mentions,
         "mention_names": [_resolve_user_name(m) for m in mentions],
+        "mentions_agents": [
+            agent for uid in mentions if (agent := _agent_mention_map().get(uid))
+        ],
         "slack_event_id": payload.get("event_id", ""),
     }
     expiry = _message_expiry()
