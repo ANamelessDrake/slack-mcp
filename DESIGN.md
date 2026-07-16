@@ -1,25 +1,32 @@
 # Slack MCP Server: Design Document
 
-A remote, multi-user MCP server that lets LLM agents (claude.ai, Claude Code, WILMA, and
-other MCP clients) send and receive Slack messages. Real-time delivery when an agent
+A self-hosted MCP server that lets LLM agents (Claude Code, Claude Desktop, WILMA, and
+other MCP clients) send and receive Slack messages in your own workspace. Real-time delivery when an agent
 session is active, durable store-and-forward when it is not. Built on AWS, deployed with
 CDK, and structured as a portfolio piece: every layer uses the native mechanism for its
 trust boundary and is independently demoable.
 
 ## 1. Goals
 
-- Any authorized person can point an MCP client at the server and send messages into
-  Slack (channels or DMs to the owner).
+- Anyone can deploy their own instance into their own Slack workspace; the deployment
+  is the tenancy boundary and each instance is operated by its owner.
+- Token holders point an MCP client at the server and send messages into Slack
+  (channels the bots are invited to, or DMs by user ID).
 - Replies in Slack reach the agent instantly while it holds an active session, and are
   stored in DynamoDB for pickup when it does not.
-- Works for hosted clients (claude.ai via OAuth 2.1) and headless/local clients
-  (WILMA via personal access tokens), including small local models (8B class).
+- Works for any MCP client that can send a bearer header (Claude Code, Claude
+  Desktop, the WILMA CLI), including small local models (8B class).
 - Multiple agents can converse with each other through Slack threads, with server-side
   loop guardrails and full human observability.
 - Infrastructure as code (CDK, Python), audit logging, least-privilege IAM.
 
 ### Non-goals (for now)
 
+- Multi-tenant service with an OAuth 2.1 authorization server. Considered and dropped
+  (July 2026): the single-tenant self-hosted model covers the actual need, and each
+  deployment's static bearer tokens are its access control. Consequence: claude.ai
+  custom connectors (which require OAuth with dynamic client registration) are not
+  supported clients; Claude Code, Claude Desktop, and headless clients are.
 - Per-user Slack identities (messages post as agent bots, not as humans). Documented as
   a phase 2 option.
 - Multi-workspace support. One Slack workspace, one bot app.
@@ -30,13 +37,13 @@ trust boundary and is independently demoable.
 ```mermaid
 flowchart LR
     subgraph Clients
-        C1[claude.ai / Claude Code<br/>OAuth 2.1]
-        C2[WILMA bridge plugin<br/>PAT bearer token]
+        C1[Claude Code / Claude Desktop<br/>bearer token]
+        C2[WILMA bridge plugin<br/>bearer token]
     end
 
     subgraph AWS
         MCP[MCP Server Lambda<br/>FastMCP, streamable HTTP<br/>Function URL RESPONSE_STREAM]
-        AUTH[Auth endpoints<br/>register / authorize / token]
+        AUTH[Bearer auth middleware]
         ING[Ingest Lambda<br/>Function URL]
         DDB[(DynamoDB<br/>messages / auth / sessions)]
         EVT[AppSync Events<br/>WebSocket pub/sub]
@@ -51,7 +58,6 @@ flowchart LR
 
     C1 -->|JSON-RPC over HTTPS| MCP
     C2 -->|JSON-RPC over HTTPS| MCP
-    C1 -.->|browser flow| AUTH
     MCP -->|chat.postMessage| API
     API --> WS
     WS -->|message events| EVAPI
@@ -70,10 +76,9 @@ flowchart LR
 | Component | AWS resource | Responsibility |
 |---|---|---|
 | MCP server | Lambda (arm64, Python) + Function URL (`RESPONSE_STREAM`) + Lambda Web Adapter | Streamable HTTP MCP endpoint; tool execution; token validation |
-| Auth layer | Same Lambda, separate routes | OAuth 2.1 authorization server (DCR, PKCE, consent) + PAT validation |
+| Auth layer | Middleware in the same Lambda | Bearer token validation (deployment-local tokens from Secrets Manager) |
 | Ingest | Lambda + Function URL | Slack Events API receiver: signature check, dedupe, store, publish |
 | Message store | DynamoDB | Durable inbox, per-session cursors, threads, audit log |
-| Auth store | DynamoDB | Users, registered clients, grants, hashed tokens, PATs |
 | Real-time bus | AppSync Events API | Push new messages to active sessions over WebSocket |
 | Secrets | Secrets Manager | Per-agent bot tokens (`xoxb-`), relay bot token, relay signing secret |
 | IaC | CDK (Python) | Everything above, plus alarms and log retention |
@@ -109,7 +114,7 @@ slack-mcp/
     (dev.json / prod.json)        # real configs, gitignored
   docs/
     architecture.md               # expanded diagrams and flows
-    authentication.md             # OAuth 2.1 / PAT design and walkthrough
+    authentication.md             # bearer token model, rotation, threat notes
     slack-app-setup.md            # workspace setup runbook
     slack-manifests/
       relay-app.yml               # relay app manifest (events + read scopes)
@@ -127,7 +132,7 @@ slack-mcp/
       mcpServer/
         app.py                    # FastMCP app behind Lambda Web Adapter
         tools/                    # one module per MCP tool
-        auth/                     # OAuth AS routes, token validation, consent page
+        auth/                     # bearer token validation middleware
         requirements.txt
       slackIngest/
         app.py                    # signature check, dedupe, store, publish
@@ -143,9 +148,8 @@ slack-mcp/
       README.md
     examples/
       claude-code.mcp.json        # .mcp.json snippet for Claude Code
-      claude-ai-setup.md          # claude.ai custom connector walkthrough
   scripts/
-    admin.py                      # mint/revoke PATs, register agents, kill switch
+    admin.py                      # rotate tokens, register agents, kill switch
   tests/
     unit/                         # per-module tests (auth, cursors, guardrails, ingest)
     integration/                  # against deployed dev stack (marked, not run in CI)
@@ -224,36 +228,24 @@ boundary it does not belong to.
 
 ### 4.1 MCP client to MCP server
 
-Two credential types validated by one code path (both resolve to an `identity` with
-`scopes`):
+Static bearer tokens, local to the deployment. The token lives in Secrets Manager
+(`{Env}-{Project}-DevBearerToken`, generated at deploy time), clients send it as
+`Authorization: Bearer <token>`, and the middleware compares in constant time.
+Distribution is manual and deliberate: the operator hands the token to the clients
+they trust, exactly like the Slack tokens themselves.
 
-**OAuth 2.1 (interactive clients: claude.ai, Claude Code).** The server implements a
-minimal authorization server:
+- Rotation: `put-secret-value` with a new value, then bounce the Lambda (the token is
+  cached per container). All clients re-key at once.
+- The agent-to-agent milestone extends this to a token-per-agent map (each token
+  resolves to an `agent_id`), still static, still Secrets Manager.
+- Access is all-or-nothing per token; there are no scopes. A holder can do everything
+  the tools allow, so treat the token like the Slack bot tokens.
 
-1. Client calls `POST /mcp` with no token, receives `401` with a `WWW-Authenticate`
-   header pointing at `/.well-known/oauth-protected-resource`.
-2. Client discovers the authorization server metadata
-   (`/.well-known/oauth-authorization-server`): registration, authorization, and token
-   endpoints.
-3. **Dynamic client registration**: `POST /register` returns a `client_id`
-   (public client, PKCE mandatory). Stored in DynamoDB.
-4. **Authorization**: the person's browser opens `/authorize`. They sign in (invite-code
-   account backed by the auth table; no self-service signup), see a consent screen
-   listing requested scopes, and approve. Server issues a short-lived authorization code
-   bound to the PKCE challenge.
-5. **Token exchange**: `POST /token` with the code and PKCE verifier returns an access
-   token (short TTL, ~1 hour) and refresh token (rotating).
-6. Every MCP request carries `Authorization: Bearer <access_token>`. The server stores
-   only SHA-256 hashes of tokens; validation is a hash lookup returning
-   `{identity, scopes, expiry}`.
-
-**Personal access tokens (headless clients: WILMA).** Minted by an admin CLI, scoped,
-long-lived but revocable, stored hashed in the same table, sent the same way
-(`Authorization: Bearer <pat>`). WILMA's bridge plugin reads it from an env var.
-
-**Scopes**: `messages:send`, `messages:read`, `messages:wait`, `channels:read`,
-`admin`. The consent screen and PAT minting both operate on these; tools check them
-before executing.
+A full OAuth 2.1 authorization server (DCR, PKCE, consent, hashed short-lived tokens,
+PATs) was designed for a multi-tenant version of this system and deliberately dropped
+in July 2026: self-hosting made deployment the tenancy boundary, which removes the
+need for per-person grants. The main trade-off accepted: claude.ai custom connectors
+require OAuth and therefore cannot connect.
 
 ### 4.2 MCP server to Slack
 
@@ -298,21 +290,21 @@ TTL/capacity settings). All on-demand capacity.
 | `cursor_<channel>` | Last-delivered timestamp per channel (multi-consumer: each session tracks its own position; no shared "delivered" flag) |
 | `ttl` | Heartbeat + 5 minutes; expiry = offline |
 
-### `auth`
+### Auth-related items
 
-Single table, item types distinguished by key prefix: `USER#`, `CLIENT#` (DCR),
-`CODE#` (auth codes, 60 s TTL), `TOKEN#<sha256>` (access/refresh/PAT, hashed),
-`AGENT#` (agent registry: `agent_id`, Slack `api_app_id`, `bot_id`, `bot_user_id`,
-display name, token secret name), and `AUDIT#` (append-only log of message sends:
-identity, agent_id, channel, timestamp, text hash). Each `USER#` and PAT `TOKEN#` item
-carries the `agent_id` it is bound to.
+With static tokens there is no separate auth table. Two item families join the
+`messages` table as milestones land: `USER#<slack_user_id>` (name-resolution cache,
+1-day TTL, written by ingest) and, with agent-to-agent, `AGENT#` registry items
+(`agent_id`, Slack `api_app_id`, `bot_id`, `bot_user_id`, display name, token secret
+name) plus an optional `AUDIT#` append-only send log. The token-to-agent map itself
+lives in Secrets Manager, not DynamoDB.
 
 ## 6. Message lifecycle
 
 ### Outbound (agent to Slack)
 
 1. Agent calls `send_message(channel, text, thread_ts?)`.
-2. Server checks scope, per-identity rate limit, channel allowlist, message length cap,
+2. Server checks per-identity rate limit, channel allowlist, message length cap,
    and thread turn budget (section 8).
 3. `chat.postMessage` using the identity's agent app token, with attribution metadata.
 4. Message and thread timestamp recorded; audit row appended.
@@ -352,13 +344,13 @@ humans know whether the agent saw the message live or will pick it up later.
 Designed to the weakest caller (8B local models): few tools, flat parameters, strings
 and integers only, defaults for everything optional, imperative descriptions.
 
-| Tool | Parameters | Scope | Notes |
-|---|---|---|---|
-| `send_message` | `channel`, `text`, `thread_ts?` | `messages:send` | Posts via the caller's own agent app |
-| `check_messages` | `channel?`, `limit?`, `mentions_only?` | `messages:read` | Drains inbox past session cursor |
-| `wait_for_messages` | `timeout_seconds?`, `channel?`, `mentions_only?` | `messages:wait` | Long-poll; the "session" primitive |
-| `read_thread` | `channel`, `thread_ts` | `messages:read` | Full thread from store (Slack API fallback) |
-| `list_channels` | none | `channels:read` | Channels the bot is a member of |
+| Tool | Parameters | Notes |
+|---|---|---|
+| `send_message` | `channel`, `text`, `thread_ts?` | Posts via the caller's own agent app; `channel` may be a user ID for a one-way DM |
+| `check_messages` | `channel?`, `limit?` | Drains inbox past session cursor |
+| `wait_for_messages` | `timeout_seconds?`, `channel?` | Long-poll; the "session" primitive |
+| `read_thread` | `channel`, `thread_ts` | Full thread via the relay |
+| `list_channels` | none | Channels the relay is a member of |
 
 Search is deliberately deferred: Slack's search API requires a user token, but the
 inbox accumulates history in DynamoDB, so a `search_messages` over the store can come
@@ -380,7 +372,7 @@ Server-side guardrails (not bypassable by prompts):
 - **Rate limits**: per-identity sends per minute; global cap aligned with Slack's
   ~1 msg/sec/channel limit.
 - **Cooldown**: minimum seconds between consecutive agent messages in one thread.
-- **Kill switch**: `admin` scope tool / CLI to revoke a token or disable sends globally.
+- **Kill switch**: operator CLI to rotate a token or disable sends globally.
 
 ## 9. WILMA integration
 
@@ -406,14 +398,15 @@ Each is independently demoable; ordering minimizes rework.
    table, `check_messages` with cursors. Demo: reply in Slack, agent reads it.
 3. **Sessions + real-time**: AppSync Events, `wait_for_messages`, presence records.
    Demo: live round-trip conversation with a human in Slack.
-4. **AuthN/AuthZ**: OAuth 2.1 AS (DCR, PKCE, consent page), PATs, scopes, token
-   hashing, audit log. Demo: claude.ai connector flow end to end.
-5. **WILMA bridge**: plugin + `_BASE_TOOLS` change. Demo: Dolphin 3 local model sending
+4. **WILMA bridge**: plugin + `_BASE_TOOLS` change. Demo: Dolphin 3 local model sending
    Slack messages through the same server.
-6. **Agent-to-agent**: second agent app, mention routing, echo filtering, turn
-   budgets, cooldowns. Demo: claude.ai and WILMA conversing in a thread, human
-   interjecting by @mention.
-7. **Optional dashboard**: AppSync GraphQL + React live conversation viewer.
+5. **Agent-to-agent**: second agent app, token-per-agent auth map, mention routing,
+   echo filtering, turn budgets, cooldowns. Demo: two agents conversing in a thread,
+   human interjecting by @mention.
+6. **Optional dashboard**: AppSync GraphQL + React live conversation viewer.
+
+(The original milestone 4, an OAuth 2.1 authorization server, was dropped; see
+section 4.1.)
 
 ## 11. Cost estimate (personal scale)
 
@@ -428,11 +421,17 @@ Each is independently demoable; ordering minimizes rework.
 
 ## 12. Security summary
 
-- Tokens stored only as SHA-256 hashes; PATs revocable; refresh tokens rotate.
+- Bearer tokens generated by Secrets Manager, rotated by overwrite + Lambda bounce;
+  a token grants full tool access, so distribute like a bot token.
 - Slack signing secret verification with replay window on every inbound event.
 - Bot tokens never leave the server side; least-privilege IAM throughout.
-- Write tools gated by scopes, channel allowlist, length caps, rate limits, audit log.
-- No public AppSync access (IAM auth only); Function URLs are the only public surface.
+- Channel access is opt-in by invitation; agent-to-agent adds turn budgets, cooldowns,
+  and an audit log.
+- AppSync Events auth is a server-side API key held only by the Lambdas; Function URLs
+  are the only public surface.
+- Messages from Slack are untrusted input to the consuming LLM; sessions with humans
+  present are the current mitigation, and server-side guardrails land with
+  agent-to-agent.
 
 ## 13. Open questions
 

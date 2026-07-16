@@ -14,4 +14,4 @@
 4. Start Claude Code and run `/mcp` to confirm the `slack` server is connected,
    then ask it to list channels and send a message.
 
-claude.ai custom connectors require OAuth and arrive with milestone 4.
+claude.ai custom connectors require OAuth, which this single-tenant design deliberately omits; use Claude Code or Claude Desktop.

@@ -57,9 +57,9 @@ separate Slack app with its own bot user and its own token):
 
 4. The agent app's signing secret is unused: agent apps receive no events.
 
-Note: until milestone 4 replaces the static dev bearer token with real identities,
-the server sends as the single agent named by `default_agent_id` in
-`config/<env>.json`. Make sure that agent's app is installed and its token stored;
+Note: the server sends as the single agent named by `default_agent_id` in
+`config/<env>.json` (a token-per-agent map arrives with the agent-to-agent
+milestone). Make sure that agent's app is installed and its token stored;
 changing `default_agent_id` requires a redeploy.
 
 ## 3. Invite the apps to a channel

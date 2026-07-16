@@ -12,7 +12,7 @@ class SecretsStack(Stack):
         aws secretsmanager put-secret-value --secret-id <name> --secret-string xoxb-...
 
     The DevBearerToken keeps its generated value; that is the token MCP clients
-    present until milestone 4 replaces it with OAuth 2.1 and PATs.
+    present (single-tenant static-token auth, DESIGN.md section 4.1).
     """
 
     def __init__(self, scope: Construct, construct_id: str, *, config: dict, **kwargs) -> None:
@@ -36,7 +36,7 @@ class SecretsStack(Stack):
         )
         self.dev_bearer_token = self._secret(
             f"{prefix}-DevBearerToken",
-            "Static bearer token for MCP clients (milestone 1 placeholder for OAuth/PATs)",
+            "Static bearer token for MCP clients (deployment-local auth)",
         )
 
         self.agent_bot_tokens: dict[str, secretsmanager.Secret] = {}

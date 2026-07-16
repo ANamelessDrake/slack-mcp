@@ -1,9 +1,10 @@
-"""Milestone 1 placeholder auth: a single static bearer token.
+"""Deployment-local bearer token auth (DESIGN.md section 4.1).
 
-Milestone 4 replaces this with OAuth 2.1 (DCR + PKCE) and per-identity PATs
-(DESIGN.md section 4). The expected token comes from Secrets Manager
+Single-tenant by design: one static token, generated at deploy time, grants
+full access. The expected token comes from Secrets Manager
 (DEV_BEARER_TOKEN_SECRET); for local development and tests, DEV_BEARER_TOKEN
-overrides it directly.
+overrides it directly. The agent-to-agent milestone extends this to a
+token-per-agent map.
 """
 
 import hmac
