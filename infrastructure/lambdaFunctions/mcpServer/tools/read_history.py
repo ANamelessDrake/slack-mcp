@@ -8,7 +8,7 @@ def read_history(channel: str, limit: int = 20) -> dict:
     earlier conversation you do not remember. `channel` is a channel ID
     (C0123456789) or DM ID (D0123456789). Returns up to `limit` most recent
     messages, oldest first, including your own. Unlike check_messages, this
-    does not mark anything as read. Covers messages from the last 30 days.
+    does not mark anything as read. Covers the deployment's retention window.
     """
     messages = [
         {

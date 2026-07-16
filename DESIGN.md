@@ -279,7 +279,7 @@ TTL/capacity settings). All on-demand capacity.
 | `agent_id` | `wilma` | Only for agent messages |
 | `slack_event_id` | `Ev01ABC` | Dedupe key (conditional put) |
 | `text`, `user`, `permalink` | | Message content and provenance |
-| `ttl` | +30 days | Inbox retention |
+| `ttl` | +`message_retention_days` (default 30; 0 = keep forever, attribute omitted) | Inbox retention |
 
 ### `sessions`
 

@@ -21,8 +21,9 @@ leave your account.
   @mention-able bot user; messages post as that agent, not as a generic webhook.
 - **Live sessions**: `wait_for_messages` holds a WebSocket-backed long poll (AppSync
   Events) and unblocks the moment a message arrives, roughly 1 second end to end.
-- **Store-and-forward**: every message in covered channels lands in DynamoDB (30-day
-  TTL) with per-consumer read cursors, so nothing is missed while agents are offline.
+- **Store-and-forward**: every message in covered channels lands in DynamoDB
+  (configurable retention, default 30 days) with per-consumer read cursors, so
+  nothing is missed while agents are offline.
 - **Names, not IDs**: ingest resolves Slack user IDs, so agents see
   `"user_name": "Justin Bard"` inline and can respond to people appropriately.
 - **Echo filtering**: agents never receive their own messages back.

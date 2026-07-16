@@ -118,6 +118,7 @@ class LambdaFunctionsStack(Stack):
             timeout=Duration.seconds(10),
             environment={
                 "MESSAGES_TABLE": database.messages_table.table_name,
+                "MESSAGE_TTL_DAYS": str(config.get("message_retention_days", 30)),
                 "SIGNING_SECRET_NAMES": ",".join(
                     [secrets.relay_signing_secret.secret_name]
                     + [s.secret_name for s in secrets.agent_signing_secrets.values()]

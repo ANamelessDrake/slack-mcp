@@ -36,9 +36,17 @@ IGNORED_SUBTYPES = {
     "channel_purpose",
 }
 
-MESSAGE_TTL_SECONDS = 30 * 24 * 3600
 SIGNATURE_WINDOW_SECONDS = 300
 USER_CACHE_TTL_SECONDS = 24 * 3600
+
+
+def _message_expiry() -> int | None:
+    """Epoch TTL for message items, or None to keep them forever
+    (message_retention_days = 0 in the environment config)."""
+    days = int(os.environ.get("MESSAGE_TTL_DAYS", "30"))
+    if days <= 0:
+        return None
+    return int(time.time()) + days * 24 * 3600
 
 _TABLE = None
 _USER_NAMES: dict[str, str] = {}
@@ -221,8 +229,10 @@ def handler(event, _context):
         "mentions": mentions,
         "mention_names": [_resolve_user_name(m) for m in mentions],
         "slack_event_id": payload.get("event_id", ""),
-        "ttl": int(time.time()) + MESSAGE_TTL_SECONDS,
     }
+    expiry = _message_expiry()
+    if expiry is not None:
+        item["ttl"] = expiry
 
     # Dedupe on (channel, ts): idempotent against Slack's delivery retries and,
     # later, against multiple subscribing apps (DESIGN.md section 3).

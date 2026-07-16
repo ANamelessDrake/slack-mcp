@@ -10,6 +10,7 @@ Real config files are gitignored because they carry your AWS account id and emai
 | `environment_name` / `environment_name_upper` | Environment label used in resource names (`dev` / `Dev`) |
 | `project_name` / `project_name_upper` | Project label used in resource names (`slackmcp` / `SlackMcp`) |
 | `alarm_email` | Destination for CloudWatch alarms (used from the monitoring milestone onward) |
+| `message_retention_days` | How long stored Slack messages live in DynamoDB (default 30; `0` keeps them forever) |
 | `default_agent_id` | Agent identity used by the milestone 1 static-token auth placeholder |
 | `agents` | One entry per agent Slack app; `id` is used in secret names and message attribution |
 

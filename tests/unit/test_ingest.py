@@ -139,6 +139,17 @@ def test_duplicate_delivery_is_idempotent(ingest):
     assert len(_items()) == 1
 
 
+def test_default_retention_sets_ttl(ingest):
+    ingest.handler(_signed_event(_message_callback()), None)
+    assert int(_items()[0]["ttl"]) > 0
+
+
+def test_zero_retention_keeps_forever(ingest, monkeypatch):
+    monkeypatch.setenv("MESSAGE_TTL_DAYS", "0")
+    ingest.handler(_signed_event(_message_callback()), None)
+    assert "ttl" not in _items()[0]
+
+
 def test_user_names_resolved_and_cached(ingest, monkeypatch):
     calls = []
 
