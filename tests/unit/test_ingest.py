@@ -177,6 +177,31 @@ def test_lookup_failure_never_blocks_ingest(ingest, monkeypatch):
     assert _items()[0]["user_name"] == ""
 
 
+def test_accepts_signature_from_any_known_app_secret(ingest, monkeypatch):
+    monkeypatch.setattr(
+        ingest, "_signing_secrets", lambda: ("relay-secret", SIGNING_SECRET)
+    )
+    # Signed with the second secret (an agent app's), still accepted
+    resp = ingest.handler(_signed_event(_message_callback()), None)
+    assert resp["statusCode"] == 200
+    assert len(_items()) == 1
+
+    monkeypatch.setattr(ingest, "_signing_secrets", lambda: ("relay-secret",))
+    resp = ingest.handler(_signed_event(_message_callback(ts="9.0")), None)
+    assert resp["statusCode"] == 401
+
+
+def test_channel_registry_tracks_conversations(ingest):
+    ingest.handler(_signed_event(_message_callback(channel="C123")), None)
+    ingest.handler(_signed_event(_message_callback(channel="D0DM99", ts="2.0")), None)
+
+    table = boto3.resource("dynamodb", region_name="us-east-1").Table("test-messages")
+    rows = table.query(
+        KeyConditionExpression=boto3.dynamodb.conditions.Key("PK").eq("CHANNELS")
+    )["Items"]
+    assert sorted(r["SK"] for r in rows) == ["CH#C123", "CH#D0DM99"]
+
+
 def test_publishes_after_store_but_not_on_duplicate(ingest, monkeypatch):
     published = []
     monkeypatch.setattr(ingest, "_publish", published.append)

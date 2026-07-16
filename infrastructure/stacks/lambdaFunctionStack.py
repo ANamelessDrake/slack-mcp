@@ -118,13 +118,18 @@ class LambdaFunctionsStack(Stack):
             timeout=Duration.seconds(10),
             environment={
                 "MESSAGES_TABLE": database.messages_table.table_name,
-                "SIGNING_SECRET_NAME": secrets.relay_signing_secret.secret_name,
+                "SIGNING_SECRET_NAMES": ",".join(
+                    [secrets.relay_signing_secret.secret_name]
+                    + [s.secret_name for s in secrets.agent_signing_secrets.values()]
+                ),
                 "RELAY_BOT_TOKEN_SECRET": secrets.relay_bot_token.secret_name,
                 "EVENTS_HTTP_ENDPOINT": events.http_endpoint,
                 "EVENTS_API_KEY": events.api_key,
             },
         )
         secrets.relay_signing_secret.grant_read(self.ingest_function)
+        for secret in secrets.agent_signing_secrets.values():
+            secret.grant_read(self.ingest_function)
         secrets.relay_bot_token.grant_read(self.ingest_function)
         # Read access covers the USER# name-cache lookups during enrichment
         database.messages_table.grant_read_write_data(self.ingest_function)

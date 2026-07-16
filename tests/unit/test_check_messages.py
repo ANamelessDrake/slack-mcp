@@ -71,21 +71,13 @@ def test_filters_own_agent_messages(table):
     assert cm.check_messages("C123")["messages"] == []
 
 
-def test_empty_channel_checks_all_member_channels(table, monkeypatch):
-    class FakeRelay:
-        def conversations_list(self, **kwargs):
-            return {
-                "channels": [
-                    {"id": "C1", "is_member": True},
-                    {"id": "C2", "is_member": False},
-                    {"id": "C3", "is_member": True},
-                ]
-            }
-
-    monkeypatch.setattr(cm, "relay_client", lambda: FakeRelay())
-    _put_message(table, "C1", "1.0", text="in C1")
-    _put_message(table, "C2", "1.0", text="in C2, not a member")
-    _put_message(table, "C3", "1.0", text="in C3")
+def test_empty_channel_sweeps_registry_including_dms(table):
+    # The ingest-maintained registry covers channels and DM conversations alike
+    for ch in ("C1", "D0DM1"):
+        table.put_item(Item={"PK": "CHANNELS", "SK": f"CH#{ch}", "channel": ch})
+    _put_message(table, "C1", "1.0", text="in channel")
+    _put_message(table, "D0DM1", "1.0", text="in DM")
+    _put_message(table, "C9", "1.0", text="not registered, not swept")
 
     result = cm.check_messages()
-    assert sorted(m["text"] for m in result["messages"]) == ["in C1", "in C3"]
+    assert sorted(m["text"] for m in result["messages"]) == ["in DM", "in channel"]

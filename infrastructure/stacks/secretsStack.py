@@ -40,11 +40,18 @@ class SecretsStack(Stack):
         )
 
         self.agent_bot_tokens: dict[str, secretsmanager.Secret] = {}
+        self.agent_signing_secrets: dict[str, secretsmanager.Secret] = {}
         for agent in config["agents"]:
             agent_id = agent["id"]
             self.agent_bot_tokens[agent_id] = self._secret(
                 f"{prefix}-BotToken-{agent_id}",
                 f"Bot token (xoxb-) for the '{agent['display_name']}' agent Slack app",
+            )
+            # Needed once the agent app subscribes to message.im (two-way DMs):
+            # Slack signs each app's event deliveries with that app's own secret.
+            self.agent_signing_secrets[agent_id] = self._secret(
+                f"{prefix}-SigningSecret-{agent_id}",
+                f"Signing secret for the '{agent['display_name']}' agent Slack app (DM events)",
             )
 
     def _secret(self, name: str, description: str) -> secretsmanager.Secret:

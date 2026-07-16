@@ -46,6 +46,13 @@ def heartbeat_session(identity: str, wait_seconds: int) -> None:
     )
 
 
+def list_known_channels() -> list[str]:
+    """Every conversation the ingest has seen a message in, including agent DMs
+    that Slack's channel-listing APIs cannot enumerate."""
+    resp = messages_table().query(KeyConditionExpression=Key("PK").eq("CHANNELS"))
+    return [item["SK"].removeprefix("CH#") for item in resp.get("Items", [])]
+
+
 def messages_after(channel: str, after_ts: str, limit: int = 20) -> list[dict]:
     resp = messages_table().query(
         KeyConditionExpression=Key("PK").eq(f"CH#{channel}") & Key("SK").gt(f"TS#{after_ts}"),

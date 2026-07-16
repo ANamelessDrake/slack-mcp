@@ -52,12 +52,15 @@ def _table():
 
 
 @lru_cache(maxsize=1)
-def _signing_secret() -> str:
+def _signing_secrets() -> tuple[str, ...]:
     direct = os.environ.get("SLACK_SIGNING_SECRET")
     if direct:
-        return direct
+        return (direct,)
     client = boto3.client("secretsmanager")
-    return client.get_secret_value(SecretId=os.environ["SIGNING_SECRET_NAME"])["SecretString"]
+    names = os.environ["SIGNING_SECRET_NAMES"].split(",")
+    return tuple(
+        client.get_secret_value(SecretId=name.strip())["SecretString"] for name in names
+    )
 
 
 @lru_cache(maxsize=1)
@@ -115,6 +118,8 @@ def _resolve_user_name(user_id: str) -> str:
 
 
 def _valid_signature(headers: dict, body: str) -> bool:
+    """Accept a signature from any known app: the relay, or an agent app whose
+    DM events (message.im) also point here. Each app signs with its own secret."""
     ts = headers.get("x-slack-request-timestamp", "")
     sig = headers.get("x-slack-signature", "")
     if not ts or not sig:
@@ -125,8 +130,11 @@ def _valid_signature(headers: dict, body: str) -> bool:
     except ValueError:
         return False
     base = f"v0:{ts}:{body}".encode()
-    expected = "v0=" + hmac.new(_signing_secret().encode(), base, hashlib.sha256).hexdigest()
-    return hmac.compare_digest(expected, sig)
+    for secret in _signing_secrets():
+        expected = "v0=" + hmac.new(secret.encode(), base, hashlib.sha256).hexdigest()
+        if hmac.compare_digest(expected, sig):
+            return True
+    return False
 
 
 def _response(status: int, body: str = "") -> dict:
@@ -224,6 +232,18 @@ def handler(event, _context):
     except _table().meta.client.exceptions.ConditionalCheckFailedException:
         log.info("duplicate message %s %s ignored", channel, ts)
         return _response(200, "ok")
+
+    # Channel registry: lets check_messages sweep every conversation the system
+    # has seen, including agent DMs that Slack's channel-listing APIs cannot show.
+    _table().put_item(
+        Item={
+            "PK": "CHANNELS",
+            "SK": f"CH#{channel}",
+            "channel": channel,
+            "channel_type": ev.get("channel_type", ""),
+            "last_ts": ts,
+        }
+    )
 
     try:
         _publish({k: v for k, v in item.items() if k not in ("PK", "SK", "ttl")})

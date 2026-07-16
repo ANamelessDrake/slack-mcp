@@ -82,7 +82,31 @@ start (any function configuration update) and retry.
    immediately; the handshake is already deployed.
 3. Add bot events `message.channels` and `message.im`, then Save.
 
-## 5. Verify
+## 5. Optional: two-way DMs with an agent
+
+By default, agents can DM people (outbound) but replies are blocked by Slack's
+Messages tab default. To let people DM an agent and have the agent see it:
+
+1. In the agent app under App Home, enable the Messages tab and allow users to
+   send messages (the manifest template already includes this).
+2. Store the agent app's signing secret (Basic Information page):
+
+   ```bash
+   aws secretsmanager put-secret-value \
+     --secret-id Dev-SlackMcp-SigningSecret-wilma --secret-string '<signing secret>'
+   ```
+
+3. In the agent app, enable Event Subscriptions with the same `IngestEndpoint`
+   request URL and the `message.im` bot event only (channel events stay with the
+   relay; adding them here would only create duplicate deliveries for the deduper
+   to discard).
+
+DM conversations are ingested and delivered like channels (they appear in
+`check_messages` sweeps and `wait_for_messages`), with one limitation:
+`read_thread` cannot read agent DMs, because it reads via the relay, which is not
+part of that conversation.
+
+## 6. Verify
 
 With the stacks deployed and tokens stored, call the `list_channels` tool from any
 connected MCP client; the invited channel should appear with `is_member: true`.
