@@ -378,13 +378,15 @@ Server-side guardrails (not bypassable by prompts):
 
 ## 9. WILMA integration
 
-- **Bridge plugin** (`~/.wilma5_plugins/slack_mcp.py`): uses the official `mcp` Python
-  SDK; connects over streamable HTTP with `Authorization: Bearer $SLACK_MCP_TOKEN`;
-  calls `tools/list`; registers each tool as a `ToolDef` forwarding to
-  `session.call_tool()`. Generic: works for any MCP server URL, not just this one.
-- **Core note**: WILMA's `compact_context` profiles filter tools to `_BASE_TOOLS` plus
-  already-used tools. Either add the Slack tools to `_BASE_TOOLS` in `agent.py` or make
-  that set plugin-extendable so small models see the tools on turn 1.
+- **Bridge plugin** (`clients/wilma-plugin/slack_mcp.py`, installed to
+  `~/.wilma5_plugins/`): speaks JSON-RPC over streamable HTTP directly (urllib in
+  `asyncio.to_thread`; the stateless server makes a full MCP SDK client session
+  unnecessary inside WILMA's loop). Calls `tools/list` at load and registers each
+  advertised tool as a `ToolDef`. Generic: works for any bearer-auth MCP server URL.
+- **Core changes (landed in wilmaV5)**: `BASE_TOOLS` is module-level and
+  plugin-extendable, so the plugin adds the Slack tools for compact-context models to
+  see on turn 1, and `load_plugins()` scans `~/.wilma5_plugins/` in addition to the
+  project directory.
 - **Listen mode** (later): a WILMA loop that repeatedly calls `wait_for_messages` and
   feeds arrivals into the ReAct loop, making WILMA an always-on participant.
 

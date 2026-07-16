@@ -156,7 +156,7 @@ DESIGN.md section 4.
 | 1. Core server | MCP server on Lambda, send/read tools, CDK | Done |
 | 2. Ingest + inbox | Slack Events API, DynamoDB store, cursors, name enrichment | Done |
 | 3. Sessions + real-time | AppSync Events, `wait_for_messages` long-poll | Done |
-| 4. WILMA bridge | MCP client plugin for local/offline models | Planned |
+| 4. WILMA bridge | MCP client plugin for local/offline models | Done |
 | 5. Agent-to-agent | Token-per-agent, mention routing, turn budgets | Planned |
 | 6. Dashboard | AppSync GraphQL + React live conversation viewer | Optional |
 
@@ -179,7 +179,7 @@ DEV_BEARER_TOKEN=local-token python -m uvicorn app:app --port 8000
 ```
 bin/, config/, infrastructure/   CDK app: entrypoint, per-env config, stacks, Lambda code
 docs/                            Setup runbook and Slack app manifests
-clients/                         Example MCP client configs (WILMA plugin arrives in milestone 4)
+clients/                         WILMA bridge plugin and example MCP client configs
 tests/unit/                      Offline unit tests
 ```
 
