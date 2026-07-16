@@ -17,6 +17,7 @@ oauth_config:
       - groups:history
       - im:history
       - users:read
+      - files:read     # read attachments posted in those conversations
 settings:
   org_deploy_enabled: false
   socket_mode_enabled: false

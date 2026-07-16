@@ -47,6 +47,7 @@ def check_messages(
                     "mentions": list(item.get("mentions", [])),
                     "mention_names": list(item.get("mention_names", [])),
                     "mentions_agents": list(item.get("mentions_agents", [])),
+                    "files": list(item.get("files", [])),
                 }
             )
 

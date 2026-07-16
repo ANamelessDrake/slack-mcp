@@ -218,6 +218,32 @@ def test_mentions_route_to_registered_agents(ingest):
     assert item["mentions_agents"] == ["claude"]
 
 
+def test_file_attachments_recorded(ingest):
+    body = _message_callback(text="here is the screenshot")
+    body["event"]["files"] = [
+        {
+            "id": "F0ABC",
+            "name": "shot.png",
+            "mimetype": "image/png",
+            "size": 5120,
+            "url_private": "https://files.slack.com/files-pri/T1-F0ABC/shot.png",
+        },
+        {"id": "F0NOURL", "name": "broken.png"},  # no url_private: skipped
+    ]
+    ingest.handler(_signed_event(body), None)
+
+    message = _items()[0]
+    assert message["files"] == [
+        {"id": "F0ABC", "name": "shot.png", "mimetype": "image/png", "size": 5120}
+    ]
+
+    table = boto3.resource("dynamodb", region_name="us-east-1").Table("test-messages")
+    record = table.get_item(Key={"PK": "FILE#F0ABC", "SK": "META"})["Item"]
+    assert record["url_private"].endswith("shot.png")
+    assert record["channel"] == "C123"
+    assert table.get_item(Key={"PK": "FILE#F0NOURL", "SK": "META"}).get("Item") is None
+
+
 def test_channel_registry_tracks_conversations(ingest):
     ingest.handler(_signed_event(_message_callback(channel="C123")), None)
     ingest.handler(_signed_event(_message_callback(channel="D0DM99", ts="2.0")), None)

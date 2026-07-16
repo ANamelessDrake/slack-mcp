@@ -89,6 +89,7 @@ class LambdaFunctionsStack(Stack):
                 "DEFAULT_AGENT_ID": config["default_agent_id"],
                 "AGENT_TURN_BUDGET": str(config.get("agent_turn_budget", 6)),
                 "AGENT_COOLDOWN_SECONDS": str(config.get("agent_cooldown_seconds", 3)),
+                "MAX_FILE_DOWNLOAD_MB": str(config.get("max_file_download_mb", 10)),
                 "MESSAGES_TABLE": database.messages_table.table_name,
                 # API key in env is a dev-stage tradeoff (visible in the CFN
                 # template); the hardening path is IAM-signed pub/sub.
@@ -127,6 +128,7 @@ class LambdaFunctionsStack(Stack):
             environment={
                 "MESSAGES_TABLE": database.messages_table.table_name,
                 "MESSAGE_TTL_DAYS": str(config.get("message_retention_days", 30)),
+                "MAX_FILE_DOWNLOAD_MB": str(config.get("max_file_download_mb", 10)),
                 "SIGNING_SECRET_NAMES": ",".join(
                     [secrets.relay_signing_secret.secret_name]
                     + [s.secret_name for s in secrets.agent_signing_secrets.values()]

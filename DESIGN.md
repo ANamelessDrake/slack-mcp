@@ -353,6 +353,8 @@ and integers only, defaults for everything optional, imperative descriptions.
 | `read_thread` | `channel`, `thread_ts` | Full thread via the relay (not available in agent DMs) |
 | `list_channels` | none | Channels the relay is a member of |
 | `find_user` | `name` | Resolve a person's user ID for DMs and `<@id>` mentions |
+| `read_file` | `file_id` | Attachment contents: MCP image blocks for images, text for text-like types |
+| `download_file` | `file_id` | Bearer-authed `GET /files/{id}` URL so clients can save real bytes locally |
 
 Search is deliberately deferred: Slack's search API requires a user token, but the
 inbox accumulates history in DynamoDB, so a `search_messages` over the store can come
@@ -375,6 +377,12 @@ Server-side guardrails (not bypassable by prompts):
   ~1 msg/sec/channel limit.
 - **Cooldown**: minimum seconds between consecutive agent messages in one thread.
 - **Kill switch**: operator CLI to rotate a token or disable sends globally.
+- **File size cap** (`max_file_download_mb`, default 10): checked against stored
+  metadata before fetching and against the bytes actually read, so understated
+  metadata cannot exhaust Lambda memory.
+- **Known-file rule**: only files recorded by ingest (`FILE#` items) can be fetched,
+  keeping file access on the same per-conversation opt-in as messages and preventing
+  workspace-wide file ID enumeration.
 
 ## 9. WILMA integration
 

@@ -232,6 +232,7 @@ def handler(event, _context):
     text = ev.get("text", "")
     sender = ev.get("user") or ev.get("bot_id") or ""
     mentions = re.findall(r"<@([A-Z0-9]+)>", text)
+    files = [f for f in (ev.get("files") or []) if f.get("id") and f.get("url_private")]
 
     item = {
         "PK": f"CH#{channel}",
@@ -250,6 +251,17 @@ def handler(event, _context):
             agent for uid in mentions if (agent := _agent_mention_map().get(uid))
         ],
         "slack_event_id": payload.get("event_id", ""),
+        # Enough for an agent to decide whether to read or download; the bytes
+        # stay in Slack and are fetched on demand via the FILE# records below.
+        "files": [
+            {
+                "id": f["id"],
+                "name": f.get("name", ""),
+                "mimetype": f.get("mimetype", ""),
+                "size": int(f.get("size", 0) or 0),
+            }
+            for f in files
+        ],
     }
     expiry = _message_expiry()
     if expiry is not None:
@@ -263,6 +275,24 @@ def handler(event, _context):
     except _table().meta.client.exceptions.ConditionalCheckFailedException:
         log.info("duplicate message %s %s ignored", channel, ts)
         return _response(200, "ok")
+
+    # File records: the lookup the read/download tools use, and the guardrail
+    # that limits file access to files actually posted where the relay can see.
+    for f in files:
+        file_item = {
+            "PK": f"FILE#{f['id']}",
+            "SK": "META",
+            "file_id": f["id"],
+            "name": f.get("name", ""),
+            "mimetype": f.get("mimetype", ""),
+            "size": int(f.get("size", 0) or 0),
+            "url_private": f["url_private"],
+            "channel": channel,
+            "ts": ts,
+        }
+        if expiry is not None:
+            file_item["ttl"] = expiry
+        _table().put_item(Item=file_item)
 
     # Channel registry: lets check_messages sweep every conversation the system
     # has seen, including agent DMs that Slack's channel-listing APIs cannot show.

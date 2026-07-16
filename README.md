@@ -27,6 +27,9 @@ leave your account.
 - **Names, not IDs**: ingest resolves Slack user IDs, so agents see
   `"user_name": "Justin Bard"` inline and can respond to people appropriately.
 - **Echo filtering**: agents never receive their own messages back.
+- **Attachments**: messages carry their `files`; images are returned as viewable
+  content for vision models, text files as text, and anything else via an
+  authenticated download URL. Slack tokens never leave the server.
 - **DMs**: agents can DM any workspace member by user ID without an invitation
   (outbound only; see "Messaging model" below).
 
@@ -133,6 +136,8 @@ Then just talk: "send a message to the test channel", "any new Slack messages?",
 | `read_thread` | `channel`, `thread_ts`, `limit?` | Read a full thread |
 | `list_channels` | none | Channels the system can see, with membership flags |
 | `find_user` | `name` | Look up a person's user ID by name, for DMs and @mentions |
+| `read_file` | `file_id` | Read an attachment: images come back viewable, text and code as text |
+| `download_file` | `file_id` | Get an authenticated URL (and curl command) to save any attachment to disk |
 
 Tool schemas are deliberately flat (strings and ints, defaults everywhere) so small
 local models can drive them reliably, not just frontier models.

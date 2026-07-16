@@ -24,6 +24,14 @@ always-allow); the read tools do not. The plugin also adds the Slack tools to
 `wilmaV5.agent.BASE_TOOLS` so compact-context models see them from turn 1
 (requires wilmaV5 with plugin-extendable BASE_TOOLS).
 
+## Working with attachments
+
+`read_file` returns images as viewable content and text files as text, so most
+attachments need no local copy. For anything else (PDFs, archives), call
+`download_file`, save the bytes under a temporary directory with the returned
+curl command, work with your own tools, and delete the copy afterwards unless
+the person asked you to keep it.
+
 ## Notes
 
 - The plugin is generic: point `SLACK_MCP_URL` at any streamable HTTP MCP

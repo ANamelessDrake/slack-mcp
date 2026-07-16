@@ -14,7 +14,8 @@ import logging
 from auth.bearer import BearerAuthMiddleware
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
-from starlette.responses import PlainTextResponse
+from sharedModules.files import FileTooLarge, FileUnknown, fetch_bytes, get_file_record
+from starlette.responses import PlainTextResponse, Response
 from starlette.routing import Route
 from tools import register_all
 
@@ -38,6 +39,27 @@ async def health(_request):
     return PlainTextResponse("ok")
 
 
+async def serve_file(request):
+    """Proxy a Slack attachment's bytes to a client that already holds a bearer
+    token, so clients can save real files without ever seeing a Slack token.
+    Guarded by the same middleware as every other route."""
+    file_id = request.path_params["file_id"]
+    try:
+        record = get_file_record(file_id)
+        data = fetch_bytes(record)
+    except FileUnknown as e:
+        return PlainTextResponse(str(e), status_code=404)
+    except FileTooLarge as e:
+        return PlainTextResponse(str(e), status_code=413)
+
+    name = str(record.get("name", file_id)).replace('"', "")
+    return Response(
+        content=data,
+        media_type=str(record.get("mimetype") or "application/octet-stream"),
+        headers={"Content-Disposition": f'attachment; filename="{name}"'},
+    )
+
+
 async def no_get_stream(_request):
     # Stateless server: we never send server-initiated messages, so we refuse
     # the standing GET listener stream (the MCP spec allows 405 for this).
@@ -47,4 +69,5 @@ async def no_get_stream(_request):
 
 
 app.router.routes.insert(0, Route("/mcp", no_get_stream, methods=["GET"]))
+app.router.routes.append(Route("/files/{file_id}", serve_file, methods=["GET"]))
 app.router.routes.append(Route("/health", health, methods=["GET"]))

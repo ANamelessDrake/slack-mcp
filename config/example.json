@@ -19,5 +19,6 @@
     }
   ],
   "agent_turn_budget": 6,
-  "agent_cooldown_seconds": 3
+  "agent_cooldown_seconds": 3,
+  "max_file_download_mb": 10
 }

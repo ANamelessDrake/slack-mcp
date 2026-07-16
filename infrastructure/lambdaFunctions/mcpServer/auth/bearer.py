@@ -14,7 +14,7 @@ import logging
 import os
 from functools import lru_cache
 
-from sharedModules.identity import set_current_agent
+from sharedModules.identity import set_base_url, set_current_agent
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -75,4 +75,5 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
                 headers={"WWW-Authenticate": "Bearer"},
             )
         set_current_agent(agent_id)
+        set_base_url(str(request.base_url))
         return await call_next(request)

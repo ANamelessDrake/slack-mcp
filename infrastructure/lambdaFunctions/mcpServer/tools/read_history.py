@@ -20,6 +20,7 @@ def read_history(channel: str, limit: int = 20) -> dict:
             "user_name": item.get("user_name", ""),
             "sender_type": item.get("sender_type", ""),
             "agent_id": item.get("agent_id", ""),
+            "files": list(item.get("files", [])),
         }
         for item in recent_messages(channel, limit)
     ]

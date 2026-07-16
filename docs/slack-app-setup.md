@@ -107,7 +107,18 @@ DM conversations are ingested and delivered like channels (they appear in
 `read_thread` cannot read agent DMs, because it reads via the relay, which is not
 part of that conversation.
 
-## 6. Verify
+## 6. Attachments
+
+Reading files people attach to messages needs `files:read` on the relay app
+(already in the manifest). If you created the relay before that scope existed,
+add it under OAuth & Permissions and reinstall the app. Nothing else changes:
+ingest records each attachment as it arrives, and the read_file / download_file
+tools fetch the bytes with the relay token, so Slack tokens never reach clients.
+
+Files posted before the scope was added are readable too, as long as the
+message itself was ingested after the file-metadata support was deployed.
+
+## 7. Verify
 
 With the stacks deployed and tokens stored, call the `list_channels` tool from any
 connected MCP client; the invited channel should appear with `is_member: true`.

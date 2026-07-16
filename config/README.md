@@ -14,6 +14,7 @@ Real config files are gitignored because they carry your AWS account id and emai
 | `default_agent_id` | Agent identity bound to the legacy DevBearerToken (per-agent McpToken secrets map to their own identities) |
 | `agents` | One entry per agent Slack app; `id` is used in secret names and message attribution |
 | `agent_turn_budget` | Max consecutive agent messages in a conversation with no human reply (default 6) |
+| `max_file_download_mb` | Largest Slack attachment the server will fetch (default 10) |
 | `agent_cooldown_seconds` | Minimum seconds between different agents' messages in one conversation (default 3) |
 
 Deploy with `./deployCDK.sh <env>`, which passes `--context env=<env>` to the CDK app.
