@@ -11,5 +11,5 @@ sys.path.insert(0, str(LAMBDA_DIR / "mcpServer"))
 
 # Local-mode auth and identity, set before app/auth modules are imported
 os.environ.setdefault("DEV_BEARER_TOKEN", "test-token")
-os.environ.setdefault("DEFAULT_AGENT_ID", "claude")
+os.environ.setdefault("DEFAULT_AGENT_ID", "wilma")
 os.environ.setdefault("AGENT_TOKEN_SECRET_PREFIX", "Test-SlackMcp-BotToken-")

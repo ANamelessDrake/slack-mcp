@@ -28,6 +28,24 @@ def set_cursor(identity: str, channel: str, last_ts: str) -> None:
     )
 
 
+def heartbeat_session(identity: str, wait_seconds: int) -> None:
+    """Record that this identity is online (a wait_for_messages call is active).
+
+    The TTL outlives the wait by a grace period so back-to-back waits read as one
+    continuous session (DESIGN.md section 6).
+    """
+    import time
+
+    messages_table().put_item(
+        Item={
+            "PK": f"SESSION#{identity}",
+            "SK": "META",
+            "identity": identity,
+            "ttl": int(time.time()) + wait_seconds + 300,
+        }
+    )
+
+
 def messages_after(channel: str, after_ts: str, limit: int = 20) -> list[dict]:
     resp = messages_table().query(
         KeyConditionExpression=Key("PK").eq(f"CH#{channel}") & Key("SK").gt(f"TS#{after_ts}"),

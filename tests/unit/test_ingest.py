@@ -135,6 +135,31 @@ def test_duplicate_delivery_is_idempotent(ingest):
     assert len(_items()) == 1
 
 
+def test_publishes_after_store_but_not_on_duplicate(ingest, monkeypatch):
+    published = []
+    monkeypatch.setattr(ingest, "_publish", published.append)
+
+    body = _message_callback(text="push me")
+    ingest.handler(_signed_event(body), None)
+    ingest.handler(_signed_event(body), None)  # duplicate delivery
+
+    assert len(published) == 1
+    payload = published[0]
+    assert payload["text"] == "push me"
+    assert "PK" not in payload and "SK" not in payload and "ttl" not in payload
+
+
+def test_publish_failure_does_not_fail_ingest(ingest, monkeypatch):
+    def boom(_):
+        raise RuntimeError("events api down")
+
+    monkeypatch.setattr(ingest, "_publish", boom)
+    resp = ingest.handler(_signed_event(_message_callback()), None)
+
+    assert resp["statusCode"] == 200
+    assert len(_items()) == 1
+
+
 def test_ignores_edits_and_noise(ingest):
     for subtype in ("message_changed", "message_deleted", "channel_join"):
         ingest.handler(_signed_event(_message_callback(subtype=subtype)), None)

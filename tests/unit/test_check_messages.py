@@ -60,12 +60,12 @@ def test_returns_new_messages_and_advances_cursor(table):
 
 
 def test_filters_own_agent_messages(table):
-    # conftest sets DEFAULT_AGENT_ID=claude; own echo must be skipped but consumed
-    _put_message(table, "C123", "1.0", text="mine", agent_id="claude", sender_type="agent")
-    _put_message(table, "C123", "2.0", text="from wilma", agent_id="wilma", sender_type="agent")
+    # conftest sets DEFAULT_AGENT_ID=wilma; own echo must be skipped but consumed
+    _put_message(table, "C123", "1.0", text="mine", agent_id="wilma", sender_type="agent")
+    _put_message(table, "C123", "2.0", text="from claude", agent_id="claude", sender_type="agent")
 
     result = cm.check_messages("C123")
-    assert [m["text"] for m in result["messages"]] == ["from wilma"]
+    assert [m["text"] for m in result["messages"]] == ["from claude"]
 
     # The echo was consumed by the cursor, not left pending
     assert cm.check_messages("C123")["messages"] == []

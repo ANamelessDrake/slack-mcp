@@ -24,6 +24,7 @@ class LambdaFunctionsStack(Stack):
         config: dict,
         secrets,
         database,
+        events,
         **kwargs,
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
@@ -83,6 +84,11 @@ class LambdaFunctionsStack(Stack):
                 "AGENT_TOKEN_SECRET_PREFIX": f"{secret_prefix}-BotToken-",
                 "DEFAULT_AGENT_ID": config["default_agent_id"],
                 "MESSAGES_TABLE": database.messages_table.table_name,
+                # API key in env is a dev-stage tradeoff (visible in the CFN
+                # template); the hardening path is IAM-signed pub/sub.
+                "EVENTS_REALTIME_ENDPOINT": events.realtime_endpoint,
+                "EVENTS_HTTP_HOST": events.http_host,
+                "EVENTS_API_KEY": events.api_key,
             },
         )
 
@@ -113,6 +119,8 @@ class LambdaFunctionsStack(Stack):
             environment={
                 "MESSAGES_TABLE": database.messages_table.table_name,
                 "SIGNING_SECRET_NAME": secrets.relay_signing_secret.secret_name,
+                "EVENTS_HTTP_ENDPOINT": events.http_endpoint,
+                "EVENTS_API_KEY": events.api_key,
             },
         )
         secrets.relay_signing_secret.grant_read(self.ingest_function)

@@ -17,6 +17,7 @@ import logging
 import os
 import re
 import time
+import urllib.request
 from functools import lru_cache
 
 import boto3
@@ -74,6 +75,33 @@ def _valid_signature(headers: dict, body: str) -> bool:
 
 def _response(status: int, body: str = "") -> dict:
     return {"statusCode": status, "body": body}
+
+
+def _publish(message: dict) -> None:
+    """Best-effort push to AppSync Events for any live wait_for_messages session.
+
+    Runs only after the durable DynamoDB write; failure here is logged and
+    swallowed because offline delivery via the inbox is unaffected.
+    """
+    endpoint = os.environ.get("EVENTS_HTTP_ENDPOINT", "")
+    if not endpoint:
+        return
+    body = json.dumps(
+        {
+            "channel": f"slack/messages/{message['channel']}",
+            "events": [json.dumps(message)],
+        }
+    ).encode()
+    req = urllib.request.Request(
+        endpoint,
+        data=body,
+        headers={
+            "Content-Type": "application/json",
+            "x-api-key": os.environ["EVENTS_API_KEY"],
+        },
+        method="POST",
+    )
+    urllib.request.urlopen(req, timeout=3)
 
 
 def handler(event, _context):
@@ -135,5 +163,11 @@ def handler(event, _context):
         log.info("stored message %s %s (sender=%s)", channel, ts, item["sender_type"])
     except _table().meta.client.exceptions.ConditionalCheckFailedException:
         log.info("duplicate message %s %s ignored", channel, ts)
+        return _response(200, "ok")
+
+    try:
+        _publish({k: v for k, v in item.items() if k not in ("PK", "SK", "ttl")})
+    except Exception:
+        log.warning("events publish failed for %s %s", channel, ts, exc_info=True)
 
     return _response(200, "ok")

@@ -38,12 +38,12 @@ def test_send_message_posts_and_returns_ts(monkeypatch):
         "ok": True,
         "channel": "C123",
         "ts": "1700000000.000100",
-        "agent_id": "claude",
+        "agent_id": "wilma",
     }
     method, kwargs = fake.calls[0]
     assert kwargs["text"] == "hello world"
     assert "thread_ts" not in kwargs
-    assert kwargs["metadata"]["event_payload"]["agent_id"] == "claude"
+    assert kwargs["metadata"]["event_payload"]["agent_id"] == "wilma"
 
 
 def test_send_message_passes_thread_ts(monkeypatch):
