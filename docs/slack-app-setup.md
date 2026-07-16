@@ -80,7 +80,8 @@ start (any function configuration update) and retry.
 1. In the relay app, open Event Subscriptions and toggle Enable Events.
 2. Set the Request URL to the `IngestEndpoint` stack output. Slack verifies it
    immediately; the handshake is already deployed.
-3. Add bot events `message.channels` and `message.im`, then Save.
+3. Add bot events `message.channels`, `message.groups` (private channels), and
+   `message.im`, then Save.
 
 ## 5. Optional: two-way DMs with an agent
 

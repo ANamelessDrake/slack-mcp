@@ -184,7 +184,8 @@ def test_list_channels_maps_fields(monkeypatch):
         response={
             "channels": [
                 {"id": "C1", "name": "general", "is_member": True, "extra": "ignored"},
-                {"id": "C2", "name": "random"},
+                {"id": "C2", "name": "secret-project", "is_member": True, "is_private": True},
+                {"id": "C3", "name": "random"},
             ]
         }
     )
@@ -194,6 +195,9 @@ def test_list_channels_maps_fields(monkeypatch):
 
     assert result["ok"] is True
     assert result["channels"] == [
-        {"id": "C1", "name": "general", "is_member": True},
-        {"id": "C2", "name": "random", "is_member": False},
+        {"id": "C1", "name": "general", "is_member": True, "is_private": False},
+        {"id": "C2", "name": "secret-project", "is_member": True, "is_private": True},
+        {"id": "C3", "name": "random", "is_member": False, "is_private": False},
     ]
+    _, kwargs = fake.calls[0]
+    assert kwargs["types"] == "public_channel,private_channel"

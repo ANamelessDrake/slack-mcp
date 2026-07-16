@@ -13,15 +13,18 @@ oauth_config:
     bot:
       - channels:read
       - channels:history
+      - groups:read      # private channels the relay is invited to
+      - groups:history
       - im:history
       - users:read
 settings:
   org_deploy_enabled: false
   socket_mode_enabled: false
   token_rotation_enabled: false
-  # Milestone 2: uncomment after the ingest Lambda exists, then re-verify the URL.
+  # Uncomment after the ingest Lambda is deployed, then verify the URL.
   # event_subscriptions:
-  #   request_url: https://REPLACE-WITH-INGEST-FUNCTION-URL/slack/events
+  #   request_url: https://REPLACE-WITH-INGEST-FUNCTION-URL/
   #   bot_events:
   #     - message.channels
+  #     - message.groups
   #     - message.im

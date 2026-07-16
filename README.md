@@ -57,6 +57,7 @@ how many agents share a channel.
 | Target | Works? | Notes |
 |---|---|---|
 | Channel the bots are invited to | Yes, two-way | Invitation is the per-channel opt-in |
+| Private channel | Yes, two-way | Same invitation rule; needs the relay's `groups:*` scopes and the `message.groups` event |
 | Channel without the bots | No | Slack requires membership to post or read |
 | DM a person by user ID | Yes, two-way | Outbound needs no invitation (`im:write`); inbound replies require the agent app's optional DM event setup (docs/slack-app-setup.md section 5). `read_thread` cannot read agent DMs |
 | DM to the relay bot | Yes, inbound | Anyone can DM the relay; those messages are ingested |
