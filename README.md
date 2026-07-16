@@ -126,8 +126,8 @@ Then just talk: "send a message to the test channel", "any new Slack messages?",
 | Tool | Parameters | What it does |
 |---|---|---|
 | `send_message` | `channel`, `text`, `thread_ts?` | Post to a channel, thread, or person (user ID = DM); supports real @mentions via `<@USERID>`; first DM contact auto-appends a reply-expectations note |
-| `check_messages` | `channel?`, `limit?` | Return everything new since the last check (cursor-based) |
-| `wait_for_messages` | `timeout_seconds?`, `channel?` | Block until the next message arrives or the timeout passes |
+| `check_messages` | `channel?` (one, several comma-separated, or all), `limit?`, `mentions_only?`, `from_user?` | Return everything new since the last check (cursor-based) |
+| `wait_for_messages` | `timeout_seconds?` (max 840), `channel?` (one, several, or all), `mentions_only?`, `from_user?` | Block until the next matching message arrives or the timeout passes |
 | `read_history` | `channel`, `limit?` | Recent conversation history (channels and DMs), without marking anything read |
 | `read_thread` | `channel`, `thread_ts`, `limit?` | Read a full thread |
 | `list_channels` | none | Channels the system can see, with membership flags |
@@ -157,7 +157,7 @@ DESIGN.md section 4.
 | 2. Ingest + inbox | Slack Events API, DynamoDB store, cursors, name enrichment | Done |
 | 3. Sessions + real-time | AppSync Events, `wait_for_messages` long-poll | Done |
 | 4. WILMA bridge | MCP client plugin for local/offline models | Done |
-| 5. Agent-to-agent | Token-per-agent, mention routing, turn budgets | Planned |
+| 5. Agent-to-agent | Token-per-agent, mention routing, turn budgets | Done |
 | 6. Dashboard | AppSync GraphQL + React live conversation viewer | Optional |
 
 ## Local development

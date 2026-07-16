@@ -74,7 +74,9 @@ class LambdaFunctionsStack(Stack):
             code=code,
             layers=[lwa_layer],
             memory_size=512,
-            timeout=Duration.seconds(120),
+            # Sized for long wait_for_messages cycles (tool cap 840s): fewer
+            # wake/re-call round trips for clients holding a standing watch
+            timeout=Duration.seconds(900),
             environment={
                 "AWS_LAMBDA_EXEC_WRAPPER": "/opt/bootstrap",
                 "AWS_LWA_INVOKE_MODE": "response_stream",

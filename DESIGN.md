@@ -347,8 +347,8 @@ and integers only, defaults for everything optional, imperative descriptions.
 | Tool | Parameters | Notes |
 |---|---|---|
 | `send_message` | `channel`, `text`, `thread_ts?` | Posts via the caller's own agent app; `channel` may be a user ID for a one-way DM |
-| `check_messages` | `channel?`, `limit?` | Drains inbox past session cursor |
-| `wait_for_messages` | `timeout_seconds?`, `channel?` | Long-poll; the "session" primitive |
+| `check_messages` | `channel?` (multi), `limit?`, `mentions_only?`, `from_user?` | Drains inbox past session cursor |
+| `wait_for_messages` | `timeout_seconds?` (max 840), `channel?` (multi), `mentions_only?`, `from_user?` | Long-poll; the "session" primitive |
 | `read_history` | `channel`, `limit?` | Recent history from the store (works in agent DMs); non-consuming |
 | `read_thread` | `channel`, `thread_ts` | Full thread via the relay (not available in agent DMs) |
 | `list_channels` | none | Channels the relay is a member of |

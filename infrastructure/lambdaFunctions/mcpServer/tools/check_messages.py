@@ -2,19 +2,23 @@ from sharedModules.dynamo import get_cursor, list_known_channels, messages_after
 from sharedModules.identity import current_agent_id
 
 
-def check_messages(channel: str = "", limit: int = 20, mentions_only: bool = False) -> dict:
+def check_messages(
+    channel: str = "", limit: int = 20, mentions_only: bool = False, from_user: str = ""
+) -> dict:
     """Check for new Slack messages since your last check.
 
     Returns messages that arrived after your previous check_messages call and
-    moves your read position forward. Pass a channel ID (like C0123456789, or a
-    DM id like D0123456789) to check one conversation, or leave it empty to check
-    every conversation the system has seen, including direct messages. Messages
-    you sent yourself are never included. Set mentions_only to true to receive
-    only messages that @mention you; other messages are then skipped for good,
-    not saved for later.
+    moves your read position forward. `channel` may be one conversation ID
+    (like C0123456789 or a DM id D0123456789), several separated by commas, or
+    empty to check every conversation the system has seen. Messages you sent
+    yourself are never included. Set mentions_only to true to receive only
+    messages that @mention you; set from_user to a user ID (from find_user) to
+    receive only that person's messages. Filtered-out messages are skipped for
+    good, not saved for later.
     """
     identity = current_agent_id()
-    channels = [channel] if channel else list_known_channels()
+    requested = [c.strip() for c in channel.split(",") if c.strip()]
+    channels = requested if requested else list_known_channels()
 
     new_messages = []
     for ch in channels:
@@ -27,6 +31,8 @@ def check_messages(channel: str = "", limit: int = 20, mentions_only: bool = Fal
             if item.get("agent_id", "") == identity:
                 continue
             if mentions_only and identity not in item.get("mentions_agents", []):
+                continue
+            if from_user and item.get("user", "") != from_user:
                 continue
             new_messages.append(
                 {
