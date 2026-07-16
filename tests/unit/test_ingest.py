@@ -59,6 +59,7 @@ def _message_callback(channel="C123", ts="1700000000.000100", text="hello", **ev
 @pytest.fixture()
 def ingest(monkeypatch):
     monkeypatch.setenv("SLACK_SIGNING_SECRET", SIGNING_SECRET)
+    monkeypatch.setenv("RELAY_BOT_TOKEN", "xoxb-test")
     monkeypatch.setenv("MESSAGES_TABLE", "test-messages")
     with mock_aws():
         boto3.resource("dynamodb", region_name="us-east-1").create_table(
@@ -73,12 +74,15 @@ def ingest(monkeypatch):
             ],
             BillingMode="PAY_PER_REQUEST",
         )
-        yield _load_ingest()
+        module = _load_ingest()
+        # Slack API is out of reach in unit tests; default to "unknown user"
+        module._lookup_user = lambda user_id: ""
+        yield module
 
 
 def _items(table_name="test-messages"):
     table = boto3.resource("dynamodb", region_name="us-east-1").Table(table_name)
-    return table.scan()["Items"]
+    return [i for i in table.scan()["Items"] if i["PK"].startswith("CH#")]
 
 
 def test_url_verification_echoes_challenge(ingest):
@@ -133,6 +137,44 @@ def test_duplicate_delivery_is_idempotent(ingest):
     resp = ingest.handler(_signed_event(body), None)
     assert resp["statusCode"] == 200
     assert len(_items()) == 1
+
+
+def test_user_names_resolved_and_cached(ingest, monkeypatch):
+    calls = []
+
+    def fake_lookup(user_id):
+        calls.append(user_id)
+        return {"U777": "Justin Bard", "U0AGENT1": "WILMA"}.get(user_id, "")
+
+    monkeypatch.setattr(ingest, "_lookup_user", fake_lookup)
+    ingest._USER_NAMES.clear()
+
+    ingest.handler(
+        _signed_event(_message_callback(text="hey <@U0AGENT1>", ts="1.0")), None
+    )
+    ingest.handler(
+        _signed_event(_message_callback(text="again <@U0AGENT1>", ts="2.0")), None
+    )
+
+    items = {i["SK"]: i for i in _items() if i["PK"] == "CH#C123"}
+    assert items["TS#1.0"]["user_name"] == "Justin Bard"
+    assert items["TS#1.0"]["mention_names"] == ["WILMA"]
+    assert items["TS#2.0"]["user_name"] == "Justin Bard"
+    # One lookup per distinct user, not per message
+    assert sorted(calls) == ["U0AGENT1", "U777"]
+
+
+def test_lookup_failure_never_blocks_ingest(ingest, monkeypatch):
+    def boom(user_id):
+        raise RuntimeError("slack down")
+
+    monkeypatch.setattr(ingest, "_lookup_user", boom)
+    ingest._USER_NAMES.clear()
+
+    resp = ingest.handler(_signed_event(_message_callback()), None)
+
+    assert resp["statusCode"] == 200
+    assert _items()[0]["user_name"] == ""
 
 
 def test_publishes_after_store_but_not_on_duplicate(ingest, monkeypatch):

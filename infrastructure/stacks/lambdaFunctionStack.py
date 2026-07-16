@@ -119,12 +119,15 @@ class LambdaFunctionsStack(Stack):
             environment={
                 "MESSAGES_TABLE": database.messages_table.table_name,
                 "SIGNING_SECRET_NAME": secrets.relay_signing_secret.secret_name,
+                "RELAY_BOT_TOKEN_SECRET": secrets.relay_bot_token.secret_name,
                 "EVENTS_HTTP_ENDPOINT": events.http_endpoint,
                 "EVENTS_API_KEY": events.api_key,
             },
         )
         secrets.relay_signing_secret.grant_read(self.ingest_function)
-        database.messages_table.grant_write_data(self.ingest_function)
+        secrets.relay_bot_token.grant_read(self.ingest_function)
+        # Read access covers the USER# name-cache lookups during enrichment
+        database.messages_table.grant_read_write_data(self.ingest_function)
 
         self.ingest_url = self.ingest_function.add_function_url(
             auth_type=_lambda.FunctionUrlAuthType.NONE,

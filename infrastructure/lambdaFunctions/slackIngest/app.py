@@ -38,8 +38,10 @@ IGNORED_SUBTYPES = {
 
 MESSAGE_TTL_SECONDS = 30 * 24 * 3600
 SIGNATURE_WINDOW_SECONDS = 300
+USER_CACHE_TTL_SECONDS = 7 * 24 * 3600
 
 _TABLE = None
+_USER_NAMES: dict[str, str] = {}
 
 
 def _table():
@@ -56,6 +58,60 @@ def _signing_secret() -> str:
         return direct
     client = boto3.client("secretsmanager")
     return client.get_secret_value(SecretId=os.environ["SIGNING_SECRET_NAME"])["SecretString"]
+
+
+@lru_cache(maxsize=1)
+def _relay_token() -> str:
+    direct = os.environ.get("RELAY_BOT_TOKEN")
+    if direct:
+        return direct
+    client = boto3.client("secretsmanager")
+    return client.get_secret_value(SecretId=os.environ["RELAY_BOT_TOKEN_SECRET"])["SecretString"]
+
+
+def _lookup_user(user_id: str) -> str:
+    """users.info via the relay token. Returns the person's name or ''."""
+    req = urllib.request.Request(
+        f"https://slack.com/api/users.info?user={user_id}",
+        headers={"Authorization": f"Bearer {_relay_token()}"},
+    )
+    with urllib.request.urlopen(req, timeout=3) as resp:
+        data = json.loads(resp.read().decode())
+    if not data.get("ok"):
+        return ""
+    user = data.get("user") or {}
+    profile = user.get("profile") or {}
+    return profile.get("display_name") or user.get("real_name") or user.get("name") or ""
+
+
+def _resolve_user_name(user_id: str) -> str:
+    """Resolve a Slack user ID to a name: identity is infrastructure, so it is
+    stamped onto messages here rather than requested by LLMs (one cached lookup
+    per person, and every MCP client sees the name with zero extra calls)."""
+    if not user_id or not user_id.startswith(("U", "W")):
+        return ""
+    if user_id in _USER_NAMES:
+        return _USER_NAMES[user_id]
+
+    cached = _table().get_item(Key={"PK": f"USER#{user_id}", "SK": "META"}).get("Item")
+    if cached:
+        name = cached.get("name", "")
+    else:
+        try:
+            name = _lookup_user(user_id)
+        except Exception:
+            log.warning("users.info failed for %s", user_id, exc_info=True)
+            return ""
+        _table().put_item(
+            Item={
+                "PK": f"USER#{user_id}",
+                "SK": "META",
+                "name": name,
+                "ttl": int(time.time()) + USER_CACHE_TTL_SECONDS,
+            }
+        )
+    _USER_NAMES[user_id] = name
+    return name
 
 
 def _valid_signature(headers: dict, body: str) -> bool:
@@ -140,6 +196,8 @@ def handler(event, _context):
     )
     agent_id = str(agent_payload.get("agent_id", ""))
     text = ev.get("text", "")
+    sender = ev.get("user") or ev.get("bot_id") or ""
+    mentions = re.findall(r"<@([A-Z0-9]+)>", text)
 
     item = {
         "PK": f"CH#{channel}",
@@ -148,10 +206,12 @@ def handler(event, _context):
         "ts": ts,
         "thread_ts": ev.get("thread_ts", ""),
         "text": text,
-        "user": ev.get("user") or ev.get("bot_id") or "",
+        "user": sender,
+        "user_name": _resolve_user_name(sender),
         "sender_type": "agent" if agent_id else ("bot" if ev.get("bot_id") else "human"),
         "agent_id": agent_id,
-        "mentions": re.findall(r"<@([A-Z0-9]+)>", text),
+        "mentions": mentions,
+        "mention_names": [_resolve_user_name(m) for m in mentions],
         "slack_event_id": payload.get("event_id", ""),
         "ttl": int(time.time()) + MESSAGE_TTL_SECONDS,
     }

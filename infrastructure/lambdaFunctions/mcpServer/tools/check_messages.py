@@ -43,9 +43,11 @@ def check_messages(channel: str = "", limit: int = 20) -> dict:
                     "thread_ts": item.get("thread_ts", ""),
                     "text": item.get("text", ""),
                     "user": item.get("user", ""),
+                    "user_name": item.get("user_name", ""),
                     "sender_type": item.get("sender_type", ""),
                     "agent_id": item.get("agent_id", ""),
                     "mentions": list(item.get("mentions", [])),
+                    "mention_names": list(item.get("mention_names", [])),
                 }
             )
 
