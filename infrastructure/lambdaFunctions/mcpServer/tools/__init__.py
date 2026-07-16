@@ -7,10 +7,11 @@ flat string parameters, defaults for everything optional.
 
 from mcp.server.fastmcp import FastMCP
 
-from . import list_channels, read_thread, send_message
+from . import check_messages, list_channels, read_thread, send_message
 
 
 def register_all(mcp: FastMCP) -> None:
     mcp.tool()(send_message.send_message)
+    mcp.tool()(check_messages.check_messages)
     mcp.tool()(read_thread.read_thread)
     mcp.tool()(list_channels.list_channels)

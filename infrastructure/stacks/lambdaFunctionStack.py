@@ -23,6 +23,7 @@ class LambdaFunctionsStack(Stack):
         *,
         config: dict,
         secrets,
+        database,
         **kwargs,
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
@@ -81,6 +82,7 @@ class LambdaFunctionsStack(Stack):
                 "DEV_BEARER_TOKEN_SECRET": secrets.dev_bearer_token.secret_name,
                 "AGENT_TOKEN_SECRET_PREFIX": f"{secret_prefix}-BotToken-",
                 "DEFAULT_AGENT_ID": config["default_agent_id"],
+                "MESSAGES_TABLE": database.messages_table.table_name,
             },
         )
 
@@ -88,10 +90,36 @@ class LambdaFunctionsStack(Stack):
         secrets.dev_bearer_token.grant_read(self.mcp_function)
         for secret in secrets.agent_bot_tokens.values():
             secret.grant_read(self.mcp_function)
+        database.messages_table.grant_read_write_data(self.mcp_function)
 
         self.function_url = self.mcp_function.add_function_url(
             auth_type=_lambda.FunctionUrlAuthType.NONE,
             invoke_mode=_lambda.InvokeMode.RESPONSE_STREAM,
+        )
+
+        # Events API receiver: stdlib + boto3 only, no bundling required.
+        # Signature verification is its authentication, so the URL is public.
+        self.ingest_function = _lambda.Function(
+            self,
+            "SlackIngest",
+            function_name=f"{env_project}-slack-ingest",
+            description="Slack Events API receiver: verify, dedupe, store",
+            runtime=_lambda.Runtime.PYTHON_3_12,
+            architecture=_lambda.Architecture.ARM_64,
+            handler="app.handler",
+            code=_lambda.Code.from_asset("infrastructure/lambdaFunctions/slackIngest"),
+            memory_size=256,
+            timeout=Duration.seconds(10),
+            environment={
+                "MESSAGES_TABLE": database.messages_table.table_name,
+                "SIGNING_SECRET_NAME": secrets.relay_signing_secret.secret_name,
+            },
+        )
+        secrets.relay_signing_secret.grant_read(self.ingest_function)
+        database.messages_table.grant_write_data(self.ingest_function)
+
+        self.ingest_url = self.ingest_function.add_function_url(
+            auth_type=_lambda.FunctionUrlAuthType.NONE,
         )
 
         CfnOutput(
@@ -99,4 +127,10 @@ class LambdaFunctionsStack(Stack):
             "McpEndpoint",
             value=f"{self.function_url.url}mcp",
             description="MCP endpoint URL for client configuration",
+        )
+        CfnOutput(
+            self,
+            "IngestEndpoint",
+            value=self.ingest_url.url,
+            description="Slack Events API request URL (relay app manifest)",
         )

@@ -2,3 +2,4 @@ ruff
 pytest
 httpx
 -r infrastructure/lambdaFunctions/mcpServer/requirements.txt
+moto

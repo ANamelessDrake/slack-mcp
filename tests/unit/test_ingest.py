@@ -1,0 +1,141 @@
+import hashlib
+import hmac
+import importlib.util
+import json
+import time
+from pathlib import Path
+
+import boto3
+import pytest
+from moto import mock_aws
+
+SIGNING_SECRET = "test-signing-secret"
+INGEST_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "infrastructure"
+    / "lambdaFunctions"
+    / "slackIngest"
+    / "app.py"
+)
+
+
+def _load_ingest():
+    # mcpServer/app.py already owns the module name "app"; load ingest by path
+    spec = importlib.util.spec_from_file_location("ingest_app", INGEST_PATH)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _signed_event(body: dict | str, secret: str = SIGNING_SECRET, ts: int | None = None) -> dict:
+    raw = body if isinstance(body, str) else json.dumps(body)
+    ts = ts if ts is not None else int(time.time())
+    base = f"v0:{ts}:{raw}".encode()
+    sig = "v0=" + hmac.new(secret.encode(), base, hashlib.sha256).hexdigest()
+    return {
+        "body": raw,
+        "headers": {
+            "x-slack-request-timestamp": str(ts),
+            "x-slack-signature": sig,
+        },
+    }
+
+
+def _message_callback(channel="C123", ts="1700000000.000100", text="hello", **event_extra):
+    return {
+        "type": "event_callback",
+        "event_id": "Ev001",
+        "event": {
+            "type": "message",
+            "channel": channel,
+            "ts": ts,
+            "text": text,
+            "user": "U777",
+            **event_extra,
+        },
+    }
+
+
+@pytest.fixture()
+def ingest(monkeypatch):
+    monkeypatch.setenv("SLACK_SIGNING_SECRET", SIGNING_SECRET)
+    monkeypatch.setenv("MESSAGES_TABLE", "test-messages")
+    with mock_aws():
+        boto3.resource("dynamodb", region_name="us-east-1").create_table(
+            TableName="test-messages",
+            KeySchema=[
+                {"AttributeName": "PK", "KeyType": "HASH"},
+                {"AttributeName": "SK", "KeyType": "RANGE"},
+            ],
+            AttributeDefinitions=[
+                {"AttributeName": "PK", "AttributeType": "S"},
+                {"AttributeName": "SK", "AttributeType": "S"},
+            ],
+            BillingMode="PAY_PER_REQUEST",
+        )
+        yield _load_ingest()
+
+
+def _items(table_name="test-messages"):
+    table = boto3.resource("dynamodb", region_name="us-east-1").Table(table_name)
+    return table.scan()["Items"]
+
+
+def test_url_verification_echoes_challenge(ingest):
+    resp = ingest.handler(
+        _signed_event({"type": "url_verification", "challenge": "abc123"}), None
+    )
+    assert resp == {"statusCode": 200, "body": "abc123"}
+
+
+def test_rejects_bad_signature(ingest):
+    event = _signed_event(_message_callback(), secret="wrong-secret")
+    assert ingest.handler(event, None)["statusCode"] == 401
+    assert _items() == []
+
+
+def test_rejects_stale_timestamp(ingest):
+    event = _signed_event(_message_callback(), ts=int(time.time()) - 3600)
+    assert ingest.handler(event, None)["statusCode"] == 401
+
+
+def test_stores_human_message_with_mentions(ingest):
+    body = _message_callback(text="hey <@U0AGENT1> and <@U0AGENT2>")
+    assert ingest.handler(_signed_event(body), None)["statusCode"] == 200
+
+    items = _items()
+    assert len(items) == 1
+    item = items[0]
+    assert item["PK"] == "CH#C123"
+    assert item["SK"] == "TS#1700000000.000100"
+    assert item["sender_type"] == "human"
+    assert item["mentions"] == ["U0AGENT1", "U0AGENT2"]
+    assert item["slack_event_id"] == "Ev001"
+
+
+def test_agent_metadata_sets_sender(ingest):
+    body = _message_callback(
+        bot_id="B9",
+        metadata={"event_type": "agent_message", "event_payload": {"agent_id": "wilma"}},
+    )
+    del body["event"]["user"]
+    ingest.handler(_signed_event(body), None)
+
+    item = _items()[0]
+    assert item["sender_type"] == "agent"
+    assert item["agent_id"] == "wilma"
+    assert item["user"] == "B9"
+
+
+def test_duplicate_delivery_is_idempotent(ingest):
+    body = _message_callback()
+    ingest.handler(_signed_event(body), None)
+    resp = ingest.handler(_signed_event(body), None)
+    assert resp["statusCode"] == 200
+    assert len(_items()) == 1
+
+
+def test_ignores_edits_and_noise(ingest):
+    for subtype in ("message_changed", "message_deleted", "channel_join"):
+        ingest.handler(_signed_event(_message_callback(subtype=subtype)), None)
+    assert _items() == []

@@ -19,6 +19,9 @@ CLAUDE.md
 .claude/
 WILMA.md
 
+# Local MCP client config (carries the deployment URL)
+.mcp.json
+
 # Misc
 *.log
 .DS_Store

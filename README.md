@@ -32,8 +32,8 @@ verified exactly once regardless of how many agents share a channel.
 
 | Milestone | Scope | Status |
 |---|---|---|
-| 1. Core server | MCP server on Lambda, send/read tools, CDK, static bearer auth | In progress |
-| 2. Ingest + inbox | Slack Events API, DynamoDB message store, cursors | Planned |
+| 1. Core server | MCP server on Lambda, send/read tools, CDK, static bearer auth | Done |
+| 2. Ingest + inbox | Slack Events API, DynamoDB message store, cursors | Done |
 | 3. Sessions + real-time | AppSync Events, `wait_for_messages` long-poll | Planned |
 | 4. AuthN/AuthZ | OAuth 2.1 (DCR + PKCE), PATs, scopes, audit log | Planned |
 | 5. WILMA bridge | MCP client plugin for local/offline models | Planned |

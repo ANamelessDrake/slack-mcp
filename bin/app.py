@@ -10,6 +10,7 @@ from aws_cdk import Environment
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.append(project_root)
 
+from infrastructure.stacks.dynamoDbStack import DynamoDbStack  # noqa: E402
 from infrastructure.stacks.lambdaFunctionStack import LambdaFunctionsStack  # noqa: E402
 from infrastructure.stacks.secretsStack import SecretsStack  # noqa: E402
 
@@ -40,13 +41,22 @@ secrets_stack = SecretsStack(
     env=env,
 )
 
+dynamodb_stack = DynamoDbStack(
+    app,
+    f"{env_project}-dynamodb",
+    config=config,
+    env=env,
+)
+
 lambda_stack = LambdaFunctionsStack(
     app,
     f"{env_project}-lambda",
     config=config,
     secrets=secrets_stack,
+    database=dynamodb_stack,
     env=env,
 )
 lambda_stack.add_dependency(secrets_stack)
+lambda_stack.add_dependency(dynamodb_stack)
 
 app.synth()
