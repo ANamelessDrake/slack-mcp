@@ -48,6 +48,13 @@ def test_mcp_rejects_wrong_token(client):
     assert resp.status_code == 401
 
 
+def test_get_stream_refused_405(client):
+    # No standing SSE listener on a stateless server; clients fall back cleanly
+    resp = client.get("/mcp", headers={**AUTH, "Accept": "text/event-stream"})
+    assert resp.status_code == 405
+    assert resp.headers["Allow"] == "POST"
+
+
 def test_mcp_initialize_with_valid_token(client):
     resp = client.post("/mcp", json=INITIALIZE, headers={**MCP_HEADERS, **AUTH})
     assert resp.status_code == 200

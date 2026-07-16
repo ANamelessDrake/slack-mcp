@@ -38,4 +38,13 @@ async def health(_request):
     return PlainTextResponse("ok")
 
 
+async def no_get_stream(_request):
+    # Stateless server: we never send server-initiated messages, so we refuse
+    # the standing GET listener stream (the MCP spec allows 405 for this).
+    # Without it, every connected client parks a Lambda invocation that runs
+    # until the function timeout kills it, stalling clients and burning money.
+    return PlainTextResponse("Method Not Allowed", status_code=405, headers={"Allow": "POST"})
+
+
+app.router.routes.insert(0, Route("/mcp", no_get_stream, methods=["GET"]))
 app.router.routes.append(Route("/health", health, methods=["GET"]))
