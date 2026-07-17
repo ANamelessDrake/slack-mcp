@@ -13,7 +13,8 @@ PNG = b"\x89PNG\r\n\x1a\n" + b"fake image bytes"
 def table(monkeypatch):
     monkeypatch.setenv("MESSAGES_TABLE", "test-messages")
     monkeypatch.setenv("MAX_FILE_DOWNLOAD_MB", "10")
-    monkeypatch.setenv("RELAY_BOT_TOKEN", "xoxb-test")
+    monkeypatch.setenv("RELAY_BOT_TOKEN", "xoxb-relay-test")
+    monkeypatch.setenv("AGENT_BOT_TOKEN", "xoxb-agent-test")
     dynamo.messages_table.cache_clear()
     files._relay_token.cache_clear()
     with mock_aws():
@@ -101,7 +102,7 @@ def test_file_predating_ingest_is_found_via_slack(table, monkeypatch):
     monkeypatch.setattr(
         files,
         "_slack_files_info",
-        lambda fid: {
+        lambda fid, token: {
             "ok": True,
             "file": {
                 "name": "transcript.txt",
@@ -127,7 +128,7 @@ def test_file_outside_known_conversations_is_refused(table, monkeypatch):
     monkeypatch.setattr(
         files,
         "_slack_files_info",
-        lambda fid: {
+        lambda fid, token: {
             "ok": True,
             "file": {
                 "name": "someone-elses.txt",
@@ -147,7 +148,7 @@ def test_file_outside_known_conversations_is_refused(table, monkeypatch):
 
 def test_unknown_file_is_refused(table, monkeypatch):
     monkeypatch.setattr(
-        files, "_slack_files_info", lambda fid: {"ok": False, "error": "file_not_found"}
+        files, "_slack_files_info", lambda fid, token: {"ok": False, "error": "file_not_found"}
     )
     result = rf.read_file("F404")
     assert result["ok"] is False
@@ -173,6 +174,8 @@ def test_size_cap_catches_understated_metadata(table, monkeypatch):
     _seed_file(table, file_id="F6", name="liar.txt", mimetype="text/plain", size=10)
 
     class FakeResp:
+        headers = {"Content-Type": "text/plain"}
+
         def read(self, n):
             return b"x" * n  # more than the cap, whatever is asked for
 
@@ -186,6 +189,60 @@ def test_size_cap_catches_understated_metadata(table, monkeypatch):
 
     with pytest.raises(files.FileTooLarge):
         files.fetch_bytes(files.get_file_record("F6"))
+
+
+LOGIN_PAGE = (
+    b'<!DOCTYPE html><html><head><script>var boot_data={"loggedInTeams":[],'
+    b'"isLoggedOutRedirect":true,"redirectURL":"/files-pri/T1-F1/x.txt"};</script>'
+    + b"x" * 2000
+)
+
+
+def test_login_page_is_an_error_not_content(table, monkeypatch):
+    # Slack answers an unauthorized file fetch with its login page and HTTP 200
+    _seed_file(table, file_id="FDM", name="secret.txt", mimetype="text/plain", size=18707)
+
+    class LoginResp:
+        headers = {"Content-Type": "text/html; charset=utf-8"}
+
+        def read(self, n):
+            return LOGIN_PAGE
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    monkeypatch.setattr(files.urllib.request, "urlopen", lambda req, timeout=0: LoginResp())
+
+    with pytest.raises(files.FileAccessDenied):
+        files.fetch_bytes(files.get_file_record("FDM"))
+
+    # And the tool surfaces it instead of reporting a successful read
+    result = rf.read_file("FDM")
+    assert result["ok"] is False
+    assert "login page" in result["error"]
+
+
+def test_dm_files_use_the_agent_token_not_the_relay(table, monkeypatch):
+    # The relay is not in an agent's DM, so its token would get the login page
+    table.put_item(
+        Item={
+            "PK": "FILE#FDM2",
+            "SK": "META",
+            "file_id": "FDM2",
+            "name": "dm.txt",
+            "mimetype": "text/plain",
+            "size": 5,
+            "url_private": "https://files.slack.com/dm",
+            "channel": "D0BHM64ET4N",
+            "ts": "1.0",
+        }
+    )
+    assert files._token_for(files.get_file_record("FDM2")) == "xoxb-agent-test"
+    _seed_file(table, file_id="FCH", name="ch.txt", mimetype="text/plain", size=5)
+    assert files._token_for(files.get_file_record("FCH")) == "xoxb-relay-test"
 
 
 def test_download_file_builds_absolute_url_and_curl(table):

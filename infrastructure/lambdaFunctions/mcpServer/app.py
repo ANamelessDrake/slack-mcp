@@ -15,6 +15,7 @@ from auth.bearer import BearerAuthMiddleware
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 from sharedModules.files import (
+    FileAccessDenied,
     FileTooLarge,
     FileUnknown,
     fetch_bytes,
@@ -58,6 +59,8 @@ async def serve_file(request):
         return PlainTextResponse(str(e), status_code=404)
     except FileTooLarge as e:
         return PlainTextResponse(str(e), status_code=413)
+    except FileAccessDenied as e:
+        return PlainTextResponse(str(e), status_code=403)
 
     # The uploader controls both the filename and the reported mimetype, so
     # neither is echoed back raw: a name could inject headers, and serving an

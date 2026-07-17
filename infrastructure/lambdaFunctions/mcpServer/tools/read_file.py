@@ -1,5 +1,6 @@
 from mcp.server.fastmcp import Image
 from sharedModules.files import (
+    FileAccessDenied,
     FileTooLarge,
     FileUnknown,
     fetch_bytes,
@@ -52,9 +53,7 @@ def read_file(file_id: str) -> object:
                 "tools."
             ),
         }
-    except FileUnknown as e:
-        return {"ok": False, "error": str(e)}
-    except FileTooLarge as e:
+    except (FileUnknown, FileTooLarge, FileAccessDenied) as e:
         return {"ok": False, "error": str(e)}
     except Exception as e:
         return {"ok": False, "error": f"could not read file: {e}"}

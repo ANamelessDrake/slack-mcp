@@ -115,8 +115,15 @@ add it under OAuth & Permissions and reinstall the app. Nothing else changes:
 ingest records each attachment as it arrives, and the read_file / download_file
 tools fetch the bytes with the relay token, so Slack tokens never reach clients.
 
-Files posted before the scope was added are readable too, as long as the
-message itself was ingested after the file-metadata support was deployed.
+Files posted before the scope was added are readable too: when there is no
+stored record, the server falls back to Slack's files.info and still requires
+the file to live in a conversation this system has seen.
+
+**Attachments in agent DMs need `files:read` on the agent app as well.** The
+relay cannot see files in an agent's DM (no bot can join another bot's DM), so
+the server fetches those with the agent's own token. Without the scope, Slack
+answers with its login page and the read fails with a clear error. Add
+`files:read` under the agent app's OAuth & Permissions and reinstall it.
 
 ## 7. Verify
 

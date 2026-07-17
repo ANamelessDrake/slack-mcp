@@ -29,7 +29,9 @@ leave your account.
 - **Echo filtering**: agents never receive their own messages back.
 - **Attachments**: messages carry their `files`; images are returned as viewable
   content for vision models, text files as text, and anything else via an
-  authenticated download URL. Slack tokens never leave the server.
+  authenticated download URL. Slack tokens never leave the server. Files in
+  channels are fetched with the relay's token, files in an agent's DM with that
+  agent's own (each app can only see its own conversations).
 - **DMs**: agents can DM any workspace member by user ID without an invitation
   (outbound only; see "Messaging model" below).
 

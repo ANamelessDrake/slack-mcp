@@ -46,6 +46,10 @@ class FileUnknown(Exception):
     pass
 
 
+class FileAccessDenied(Exception):
+    pass
+
+
 def max_bytes() -> int:
     return int(float(os.environ.get("MAX_FILE_DOWNLOAD_MB", "10")) * 1024 * 1024)
 
@@ -76,17 +80,38 @@ def _relay_token() -> str:
     direct = os.environ.get("RELAY_BOT_TOKEN")
     if direct:
         return direct
-    import boto3
+    from sharedModules.slack import relay_token
 
-    client = boto3.client("secretsmanager")
-    name = os.environ["RELAY_BOT_TOKEN_SECRET"]
-    return client.get_secret_value(SecretId=name)["SecretString"]
+    return relay_token()
 
 
-def _slack_files_info(file_id: str) -> dict:
+def _agent_token() -> str:
+    direct = os.environ.get("AGENT_BOT_TOKEN")
+    if direct:
+        return direct
+    from sharedModules.identity import current_agent_id
+    from sharedModules.slack import agent_token
+
+    return agent_token(current_agent_id())
+
+
+def _token_for(record: dict) -> str:
+    """Which app's token can actually see this file.
+
+    A file posted in an agent's DM is invisible to the relay: the relay is not
+    in that conversation, and Slack answers with its login page rather than an
+    error. The agent whose DM it is can see it, so DMs use the calling agent's
+    token and everything else uses the relay's.
+    """
+    if str(record.get("channel", "")).startswith("D"):
+        return _agent_token()
+    return _relay_token()
+
+
+def _slack_files_info(file_id: str, token: str) -> dict:
     req = urllib.request.Request(
         "https://slack.com/api/files.info?file=" + urllib.parse.quote(file_id, safe=""),
-        headers={"Authorization": f"Bearer {_relay_token()}"},
+        headers={"Authorization": f"Bearer {token}"},
     )
     with urllib.request.urlopen(req, timeout=10) as resp:
         return json.loads(resp.read().decode())
@@ -107,7 +132,13 @@ def get_file_record(file_id: str) -> dict:
     if item:
         return item
 
-    data = _slack_files_info(file_id)
+    # Which app can see it is unknown before the lookup, so try the relay (channels)
+    # and then the calling agent (its own DMs).
+    data = {}
+    for token in (_relay_token(), _agent_token()):
+        data = _slack_files_info(file_id, token)
+        if data.get("ok"):
+            break
     if not data.get("ok"):
         raise FileUnknown(
             f"file '{file_id}' is not readable: Slack said '{data.get('error')}'"
@@ -135,8 +166,25 @@ def get_file_record(file_id: str) -> dict:
     }
 
 
+def _reject_login_page(record: dict, content_type: str, data: bytes) -> None:
+    """Slack serves its login page, with HTTP 200, when the fetching token
+    cannot see a file. Without this check an auth failure reads as a successful
+    download of ~61 KB of HTML, and callers trusting ok=true would consume
+    Slack's sign-in page as file content."""
+    expected = str(record.get("mimetype", "")).lower()
+    looks_like_login = b"isLoggedOutRedirect" in data[:8192]
+    html_response = content_type.lower().startswith("text/html")
+    if not looks_like_login and not (html_response and not expected.startswith("text/html")):
+        return
+    raise FileAccessDenied(
+        f"Slack returned its login page instead of '{record.get('name', '')}': the app "
+        "fetching this file cannot see it. Files in an agent's DM need files:read on "
+        "that agent's Slack app; files in a channel need the relay to be a member."
+    )
+
+
 def fetch_bytes(record: dict) -> bytes:
-    """Download a file's bytes with the relay bot token, enforcing the size cap."""
+    """Download a file's bytes with whichever app's token can see it."""
     limit = max_bytes()
     declared = int(record.get("size", 0) or 0)
     if declared > limit:
@@ -146,11 +194,13 @@ def fetch_bytes(record: dict) -> bytes:
 
     req = urllib.request.Request(
         record["url_private"],
-        headers={"Authorization": f"Bearer {_relay_token()}"},
+        headers={"Authorization": f"Bearer {_token_for(record)}"},
     )
     with urllib.request.urlopen(req, timeout=30) as resp:
+        content_type = resp.headers.get("Content-Type", "")
         # Read one byte past the cap so an understated size is still caught
         data = resp.read(limit + 1)
     if len(data) > limit:
         raise FileTooLarge(f"file exceeds the {limit / 1048576:.0f} MB limit")
+    _reject_login_page(record, content_type, data)
     return data
