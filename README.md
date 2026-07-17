@@ -137,6 +137,7 @@ Then just talk: "send a message to the test channel", "any new Slack messages?",
 | `read_history` | `channel`, `limit?` | Recent conversation history (channels and DMs), without marking anything read |
 | `read_thread` | `channel`, `thread_ts`, `limit?` | Read a full thread |
 | `list_channels` | none | Channels the system can see, with membership flags |
+| `list_members` | `channel` | Who is in a conversation: id, name, and whether it's a bot |
 | `find_user` | `name` | Look up a person's user ID by name, for DMs and @mentions |
 | `read_file` | `file_id` | Read an attachment: images come back viewable, text and code as text |
 | `download_file` | `file_id` | Get an authenticated URL (and curl command) to save any attachment to disk |

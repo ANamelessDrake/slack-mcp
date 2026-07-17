@@ -46,6 +46,31 @@ def heartbeat_session(identity: str, wait_seconds: int) -> None:
     )
 
 
+USER_CACHE_TTL_SECONDS = 24 * 3600
+
+
+def get_cached_user(user_id: str) -> dict | None:
+    """The USER# name-cache item ingest fills, if it is still live."""
+    resp = messages_table().get_item(Key={"PK": f"USER#{user_id}", "SK": "META"})
+    return resp.get("Item")
+
+
+def cache_user(user_id: str, name: str, is_bot: bool = False) -> None:
+    """Same cache ingest writes, plus is_bot. Items written by ingest carry no
+    is_bot, so readers that need it refetch once and enrich the row."""
+    import time
+
+    messages_table().put_item(
+        Item={
+            "PK": f"USER#{user_id}",
+            "SK": "META",
+            "name": name,
+            "is_bot": is_bot,
+            "ttl": int(time.time()) + USER_CACHE_TTL_SECONDS,
+        }
+    )
+
+
 def channel_known(channel: str) -> bool:
     resp = messages_table().get_item(Key={"PK": "CHANNELS", "SK": f"CH#{channel}"})
     return "Item" in resp
