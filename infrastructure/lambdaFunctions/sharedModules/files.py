@@ -14,12 +14,14 @@ Two guardrails live here (DESIGN.md section 8):
   workspace file IDs.
 """
 
+import json
 import os
 import re
+import urllib.parse
 import urllib.request
 from functools import lru_cache
 
-from sharedModules.dynamo import messages_table
+from sharedModules.dynamo import list_known_channels, messages_table
 
 _UNSAFE_FILENAME = re.compile(r"[^A-Za-z0-9._-]")
 
@@ -81,16 +83,56 @@ def _relay_token() -> str:
     return client.get_secret_value(SecretId=name)["SecretString"]
 
 
+def _slack_files_info(file_id: str) -> dict:
+    req = urllib.request.Request(
+        "https://slack.com/api/files.info?file=" + urllib.parse.quote(file_id, safe=""),
+        headers={"Authorization": f"Bearer {_relay_token()}"},
+    )
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        return json.loads(resp.read().decode())
+
+
 def get_file_record(file_id: str) -> dict:
-    """Metadata for a file the ingest recorded. Raises FileUnknown otherwise."""
+    """Metadata for a readable file. Raises FileUnknown if it is out of bounds.
+
+    Ingest records every attachment it sees, but files posted before this
+    system existed (or before file support shipped) have no record. Rather than
+    leaving the whole back catalogue unreadable, fall back to Slack's files.info
+    and enforce the same boundary live: the file must be shared into a
+    conversation this system has actually seen messages from. That keeps file
+    access on the per-conversation opt-in and still refuses arbitrary file IDs.
+    """
     resp = messages_table().get_item(Key={"PK": f"FILE#{file_id}", "SK": "META"})
     item = resp.get("Item")
-    if not item:
+    if item:
+        return item
+
+    data = _slack_files_info(file_id)
+    if not data.get("ok"):
         raise FileUnknown(
-            f"file '{file_id}' is not in this system's message history; only files "
-            "posted to conversations the relay is in can be read"
+            f"file '{file_id}' is not readable: Slack said '{data.get('error')}'"
         )
-    return item
+
+    info = data.get("file") or {}
+    shared_in = set(
+        (info.get("channels") or []) + (info.get("groups") or []) + (info.get("ims") or [])
+    )
+    known = set(list_known_channels())
+    if not shared_in & known:
+        raise FileUnknown(
+            f"file '{file_id}' is not shared into any conversation this system has "
+            "seen; only files posted where the relay is present can be read"
+        )
+
+    return {
+        "file_id": file_id,
+        "name": info.get("name", ""),
+        "mimetype": info.get("mimetype", ""),
+        "size": int(info.get("size", 0) or 0),
+        "url_private": info["url_private"],
+        "channel": next(iter(shared_in & known)),
+        "ts": str(info.get("timestamp", "")),
+    }
 
 
 def fetch_bytes(record: dict) -> bytes:

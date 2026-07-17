@@ -91,10 +91,67 @@ def test_binary_points_at_download(table):
     assert "download_file" in result["error"]
 
 
-def test_unknown_file_is_refused(table):
+def _known_channel(table, channel="C1"):
+    table.put_item(Item={"PK": "CHANNELS", "SK": f"CH#{channel}", "channel": channel})
+
+
+def test_file_predating_ingest_is_found_via_slack(table, monkeypatch):
+    # No FILE# record, but the file lives in a conversation we have seen
+    _known_channel(table, "C0PRIVATE")
+    monkeypatch.setattr(
+        files,
+        "_slack_files_info",
+        lambda fid: {
+            "ok": True,
+            "file": {
+                "name": "transcript.txt",
+                "mimetype": "text/plain",
+                "size": 12,
+                "url_private": "https://files.slack.com/old",
+                "groups": ["C0PRIVATE"],
+                "timestamp": 1784000000,
+            },
+        },
+    )
+    monkeypatch.setattr(rf, "fetch_bytes", lambda record: b"old content")
+
+    result = rf.read_file("F0OLD")
+
+    assert result["ok"] is True
+    assert result["name"] == "transcript.txt"
+    assert result["content"] == "old content"
+
+
+def test_file_outside_known_conversations_is_refused(table, monkeypatch):
+    _known_channel(table, "C1")
+    monkeypatch.setattr(
+        files,
+        "_slack_files_info",
+        lambda fid: {
+            "ok": True,
+            "file": {
+                "name": "someone-elses.txt",
+                "mimetype": "text/plain",
+                "size": 1,
+                "url_private": "https://files.slack.com/x",
+                "channels": ["C0NOTOURS"],
+            },
+        },
+    )
+
+    result = rf.read_file("F0ELSEWHERE")
+
+    assert result["ok"] is False
+    assert "not shared into any conversation this system has seen" in result["error"]
+
+
+def test_unknown_file_is_refused(table, monkeypatch):
+    monkeypatch.setattr(
+        files, "_slack_files_info", lambda fid: {"ok": False, "error": "file_not_found"}
+    )
     result = rf.read_file("F404")
     assert result["ok"] is False
-    assert "not in this system's message history" in result["error"]
+    assert "file_not_found" in result["error"]
 
 
 def test_size_cap_enforced_before_fetch(table, monkeypatch):
