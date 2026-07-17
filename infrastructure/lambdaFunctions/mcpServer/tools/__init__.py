@@ -8,11 +8,14 @@ flat string parameters, defaults for everything optional.
 from mcp.server.fastmcp import FastMCP
 
 from . import (
+    canvas_create,
+    canvas_edit,
     check_messages,
     download_file,
     find_user,
     list_channels,
     list_members,
+    read_canvas,
     read_file,
     read_history,
     read_thread,
@@ -32,3 +35,6 @@ def register_all(mcp: FastMCP) -> None:
     mcp.tool()(find_user.find_user)
     mcp.tool()(read_file.read_file)
     mcp.tool()(download_file.download_file)
+    mcp.tool()(read_canvas.read_canvas)
+    mcp.tool()(canvas_create.canvas_create)
+    mcp.tool()(canvas_edit.canvas_edit)

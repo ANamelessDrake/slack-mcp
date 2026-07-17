@@ -356,6 +356,9 @@ and integers only, defaults for everything optional, imperative descriptions.
 | `find_user` | `name` | Resolve a person's user ID for DMs and `<@id>` mentions |
 | `read_file` | `file_id` | Attachment contents: MCP image blocks for images, text for text-like types |
 | `download_file` | `file_id` | Bearer-authed `GET /files/{id}` URL so clients can save real bytes locally |
+| `read_canvas` | `channel` | Canvas content parsed to sections (HTML -> {section_id, type, text}) + markdown |
+| `canvas_create` | `channel`, `markdown` | Create the channel's canvas (one per channel on free plans) |
+| `canvas_edit` | `channel`, `operation`, `markdown?`, `find_text?`, `section_id?` | Section-addressed in-place edit |
 
 Search is deliberately deferred: Slack's search API requires a user token, but the
 inbox accumulates history in DynamoDB, so a `search_messages` over the store can come
