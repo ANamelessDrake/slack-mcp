@@ -59,6 +59,61 @@ def test_parse_nested_bulleted_list_indents():
     assert data["markdown"] == "- alpha\n- beta\n  - nested one\n  - nested two"
 
 
+def test_checklist_renders_task_syntax():
+    # data-section-style='7' is a checklist; class='checked' marks a done item
+    html = (
+        '<div class="quip-canvas-content">'
+        "<div data-section-style='7'><ul id='u'>"
+        "<li id='t1'><span id='t1'>todo one</span></li>"
+        "<li id='t2' class='checked'><span id='t2'>done two</span></li>"
+        "<li id='t3'><span id='t3'>todo three</span></li>"
+        "</ul></div></div>"
+    )
+    data = canvas.parse_canvas(html)
+    assert data["markdown"] == "- [ ] todo one\n- [x] done two\n- [ ] todo three"
+
+
+def test_read_canvas_returns_title(monkeypatch):
+    monkeypatch.setattr(rc, "channel_canvas_id", lambda ch: "FCANVAS")
+    parsed = canvas.parse_canvas(CANVAS_HTML)
+    parsed["title"] = "Team Board"
+    monkeypatch.setattr(rc, "fetch_canvas", lambda ch, cid: parsed)
+
+    result = rc.read_canvas("C1")
+
+    assert result["title"] == "Team Board"
+
+
+def test_set_title_tool(monkeypatch):
+    import tools.canvas_set_title as cst
+
+    captured = {}
+    monkeypatch.setattr(cst, "channel_canvas_id", lambda ch: "FCANVAS")
+    monkeypatch.setattr(
+        cst, "set_canvas_title", lambda cid, title: captured.update(cid=cid, title=title)
+    )
+
+    result = cst.canvas_set_title("C1", "New Name")
+
+    assert result == {"ok": True, "canvas_id": "FCANVAS", "title": "New Name"}
+    assert captured == {"cid": "FCANVAS", "title": "New Name"}
+
+
+def test_set_title_rejects_empty(monkeypatch):
+    import tools.canvas_set_title as cst
+
+    assert cst.canvas_set_title("C1", "  ")["ok"] is False
+
+
+def test_set_title_needs_a_canvas(monkeypatch):
+    import tools.canvas_set_title as cst
+
+    monkeypatch.setattr(cst, "channel_canvas_id", lambda ch: None)
+    result = cst.canvas_set_title("C1", "Name")
+    assert result["ok"] is False
+    assert "no canvas yet" in result["error"]
+
+
 def test_inline_formatting_becomes_markdown():
     # Exactly the tags Slack emits (verified against live canvas output)
     html = (
@@ -146,11 +201,23 @@ def test_create_refuses_when_canvas_exists(monkeypatch):
 
 def test_create_when_absent(monkeypatch):
     monkeypatch.setattr(cc, "channel_canvas_id", lambda ch: None)
-    monkeypatch.setattr(cc, "create_channel_canvas", lambda ch, md: "FNEW")
+    monkeypatch.setattr(cc, "create_channel_canvas", lambda ch, md, title="": "FNEW")
 
     result = cc.canvas_create("C1", "# Status\npending")
 
     assert result == {"ok": True, "canvas_id": "FNEW"}
+
+
+def test_create_passes_title(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(cc, "channel_canvas_id", lambda ch: None)
+    monkeypatch.setattr(
+        cc, "create_channel_canvas", lambda ch, md, title="": captured.update(title=title) or "F"
+    )
+
+    cc.canvas_create("C1", "# hi", title="Team Board")
+
+    assert captured["title"] == "Team Board"
 
 
 def _capture_edit(monkeypatch):

@@ -10,6 +10,7 @@ from mcp.server.fastmcp import FastMCP
 from . import (
     canvas_create,
     canvas_edit,
+    canvas_set_title,
     check_messages,
     download_file,
     find_channel,
@@ -40,3 +41,4 @@ def register_all(mcp: FastMCP) -> None:
     mcp.tool()(read_canvas.read_canvas)
     mcp.tool()(canvas_create.canvas_create)
     mcp.tool()(canvas_edit.canvas_edit)
+    mcp.tool()(canvas_set_title.canvas_set_title)

@@ -27,7 +27,7 @@ leave your account.
 - **Names, not IDs**: ingest resolves Slack user IDs, so agents see
   `"user_name": "Justin Bard"` inline and can respond to people appropriately.
 - **Echo filtering**: agents never receive their own messages back.
-- **Canvases**: agents can create and maintain a channel's shared canvas document, editing it one section at a time (by id or matching text) so human edits elsewhere are never clobbered.
+- **Canvases**: agents can create and maintain a channel's shared canvas document (with a title and checklists), editing it one section at a time (by id or matching text) so human edits elsewhere are never clobbered.
 - **Attachments**: messages carry their `files`; images are returned as viewable
   content for vision models, text files as text, and anything else via an
   authenticated download URL. Slack tokens never leave the server. Files in
@@ -143,8 +143,9 @@ Then just talk: "send a message to the test channel", "any new Slack messages?",
 | `find_user` | `name` | Look up a person's user ID by name, for DMs and @mentions |
 | `read_file` | `file_id` | Read an attachment: images come back viewable, text and code as text |
 | `download_file` | `file_id` | Get an authenticated URL (and curl command) to save any attachment to disk |
-| `read_canvas` | `channel` | Read a channel's canvas as sections (with ids) and markdown |
-| `canvas_create` | `channel`, `markdown` | Start a channel's shared canvas document |
+| `read_canvas` | `channel` | Read a channel's canvas: title, sections (with ids), and markdown |
+| `canvas_create` | `channel`, `markdown`, `title?` | Start a channel's shared canvas document |
+| `canvas_set_title` | `channel`, `title` | Set or change a canvas's title after creation |
 | `canvas_edit` | `channel`, `operation`, ... | Edit a canvas in place: append/prepend/replace/insert/delete one section |
 
 Tool schemas are deliberately flat (strings and ints, defaults everywhere) so small

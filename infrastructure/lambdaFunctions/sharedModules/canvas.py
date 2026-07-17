@@ -24,8 +24,10 @@ from sharedModules.slack import agent_client, agent_token, relay_client, relay_t
 # Top-level canvas blocks that carry a targetable id
 _BLOCK_TAGS = {"h1", "h2", "h3", "h4", "h5", "h6", "p", "li", "blockquote"}
 _HEADING_LEVEL = {"h1": "#", "h2": "##", "h3": "###", "h4": "####", "h5": "#####", "h6": "######"}
-# Slack wraps lists in <div data-section-style='N'>: 6 numbers the items, others bullet them
+# Slack wraps lists in <div data-section-style='N'>: 6 numbers items, 7 is a
+# checklist (checked items carry class='checked'), anything else bullets them.
 _ORDERED_STYLE = "6"
+_CHECKLIST_STYLE = "7"
 _LIST_INDENT = "  "  # markdown nesting per depth level
 # Inline formatting tags Slack emits inside blocks, mapped to markdown markers.
 # (Slack rejects ordered-under-bulleted nesting, so mixed-style nesting never occurs.)
@@ -68,20 +70,27 @@ def channel_canvas_id(channel: str) -> str | None:
     return None
 
 
-def create_channel_canvas(channel: str, markdown: str) -> str:
-    resp = _write_client().api_call(
-        "conversations.canvases.create",
-        json={
-            "channel_id": channel,
-            "document_content": {"type": "markdown", "markdown": markdown},
-        },
-    )
+def create_channel_canvas(channel: str, markdown: str, title: str = "") -> str:
+    payload = {
+        "channel_id": channel,
+        "document_content": {"type": "markdown", "markdown": markdown},
+    }
+    if title:
+        payload["title"] = title
+    resp = _write_client().api_call("conversations.canvases.create", json=payload)
     return resp["canvas_id"]
 
 
 def apply_changes(canvas_id: str, changes: list[dict]) -> None:
     _write_client().api_call(
         "canvases.edit", json={"canvas_id": canvas_id, "changes": changes}
+    )
+
+
+def set_canvas_title(canvas_id: str, title: str) -> None:
+    apply_changes(
+        canvas_id,
+        [{"operation": "rename", "title_content": {"type": "markdown", "markdown": title}}],
     )
 
 
@@ -96,7 +105,7 @@ class _CanvasParser(HTMLParser):
         self.blocks: list[dict] = []
         self._cur: dict | None = None
         self._text: list[str] = []
-        self._ordered = False
+        self._mode = "bullet"
         self._depth = 0
         self._counters: dict[int, int] = {}
         self._group = 0
@@ -105,7 +114,14 @@ class _CanvasParser(HTMLParser):
     def handle_starttag(self, tag, attrs):
         d = dict(attrs)
         if tag == "div" and "data-section-style" in d:
-            self._ordered = d["data-section-style"] == _ORDERED_STYLE
+            style = d["data-section-style"]
+            self._mode = (
+                "ordered"
+                if style == _ORDERED_STYLE
+                else "checklist"
+                if style == _CHECKLIST_STYLE
+                else "bullet"
+            )
             self._depth = 0
             self._counters = {}
             self._group += 1  # each list section is its own group
@@ -118,9 +134,11 @@ class _CanvasParser(HTMLParser):
                 depth = max(1, self._depth)
                 self._counters[depth] = self._counters.get(depth, 0) + 1
                 block["depth"] = depth
-                block["ordered"] = self._ordered
+                block["mode"] = self._mode
                 block["number"] = self._counters[depth]
                 block["group"] = self._group
+                if self._mode == "checklist":
+                    block["checked"] = "checked" in d.get("class", "")
             self._cur = block
             self._text = []
         elif self._cur is not None:
@@ -137,7 +155,7 @@ class _CanvasParser(HTMLParser):
 
     def handle_endtag(self, tag):
         if tag == "div":
-            self._ordered = False
+            self._mode = "bullet"
             self._depth = 0
             self._counters = {}
         elif tag == "ul":
@@ -162,8 +180,13 @@ def _block_markdown(block: dict) -> str:
         return f"{_HEADING_LEVEL[tag]} {text}"
     if tag == "li":
         indent = _LIST_INDENT * (block.get("depth", 1) - 1)
-        marker = f"{block.get('number', 1)}." if block.get("ordered") else "-"
-        return f"{indent}{marker} {text}"
+        mode = block.get("mode", "bullet")
+        if mode == "ordered":
+            return f"{indent}{block.get('number', 1)}. {text}"
+        if mode == "checklist":
+            box = "[x]" if block.get("checked") else "[ ]"
+            return f"{indent}- {box} {text}"
+        return f"{indent}- {text}"
     if tag == "blockquote":
         return f"> {text}"
     return text
@@ -200,9 +223,10 @@ def parse_canvas(html: str) -> dict:
 
 
 def fetch_canvas(channel: str, canvas_id: str) -> dict:
-    """Read a canvas's current content as parsed sections plus markdown."""
+    """Read a canvas's title, parsed sections, and assembled markdown."""
     info = _read_client(channel).files_info(file=canvas_id)
-    url = (info.get("file") or {}).get("url_private")
+    file = info.get("file") or {}
+    url = file.get("url_private")
     if not url:
         raise CanvasError(f"canvas '{canvas_id}' has no readable content")
 
@@ -218,7 +242,9 @@ def fetch_canvas(channel: str, canvas_id: str) -> dict:
         raise CanvasError(
             "cannot read this canvas: the reading app is not in this conversation"
         )
-    return parse_canvas(html)
+    parsed = parse_canvas(html)
+    parsed["title"] = file.get("title") or ""
+    return parsed
 
 
 def find_section_id(channel: str, canvas_id: str, find_text: str) -> str:

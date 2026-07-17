@@ -4,11 +4,12 @@ from sharedModules.canvas import CanvasError, channel_canvas_id, fetch_canvas
 def read_canvas(channel: str) -> dict:
     """Read a channel's canvas (its shared document).
 
-    `channel` is a channel ID (C0123456789). Returns the canvas as `markdown`
-    plus a list of `sections`, each with a `section_id`, `type` (h1, h2,
-    paragraph, li), and `text`. Pass a section's `section_id` (or matching text
-    via `find_text`) to canvas_edit to change just that part in place. Returns
-    an error if the channel has no canvas yet; create one with canvas_create.
+    `channel` is a channel ID (C0123456789). Returns the canvas `title`, the
+    full `markdown`, and a list of `sections`, each with a `section_id`, `type`
+    (h1, h2, paragraph, li), and `text`. Checklist items appear in the markdown
+    as - [ ] and - [x]. Pass a section's `section_id` (or matching text via
+    `find_text`) to canvas_edit to change just that part in place. Returns an
+    error if the channel has no canvas yet; create one with canvas_create.
     """
     try:
         canvas_id = channel_canvas_id(channel)
@@ -26,6 +27,7 @@ def read_canvas(channel: str) -> dict:
     return {
         "ok": True,
         "canvas_id": canvas_id,
+        "title": data.get("title", ""),
         "sections": data["sections"],
         "markdown": data["markdown"],
     }
