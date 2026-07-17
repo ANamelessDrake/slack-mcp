@@ -353,6 +353,7 @@ and integers only, defaults for everything optional, imperative descriptions.
 | `read_thread` | `channel`, `thread_ts` | Full thread via the relay (not available in agent DMs) |
 | `list_channels` | none | Channels the relay is a member of |
 | `list_members` | `channel` | Channel membership with resolved names and bot flags (relay's existing scopes) |
+| `find_channel` | `name` | Resolve a channel's ID from its name |
 | `find_user` | `name` | Resolve a person's user ID for DMs and `<@id>` mentions |
 | `read_file` | `file_id` | Attachment contents: MCP image blocks for images, text for text-like types |
 | `download_file` | `file_id` | Bearer-authed `GET /files/{id}` URL so clients can save real bytes locally |

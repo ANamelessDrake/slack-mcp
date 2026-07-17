@@ -12,6 +12,7 @@ from . import (
     canvas_edit,
     check_messages,
     download_file,
+    find_channel,
     find_user,
     list_channels,
     list_members,
@@ -32,6 +33,7 @@ def register_all(mcp: FastMCP) -> None:
     mcp.tool()(read_thread.read_thread)
     mcp.tool()(list_channels.list_channels)
     mcp.tool()(list_members.list_members)
+    mcp.tool()(find_channel.find_channel)
     mcp.tool()(find_user.find_user)
     mcp.tool()(read_file.read_file)
     mcp.tool()(download_file.download_file)

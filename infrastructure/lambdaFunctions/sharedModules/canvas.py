@@ -27,6 +27,15 @@ _HEADING_LEVEL = {"h1": "#", "h2": "##", "h3": "###", "h4": "####", "h5": "#####
 # Slack wraps lists in <div data-section-style='N'>: 6 numbers the items, others bullet them
 _ORDERED_STYLE = "6"
 _LIST_INDENT = "  "  # markdown nesting per depth level
+# Inline formatting tags Slack emits inside blocks, mapped to markdown markers.
+# (Slack rejects ordered-under-bulleted nesting, so mixed-style nesting never occurs.)
+_INLINE_WRAP = {
+    "b": "**", "strong": "**",
+    "i": "*", "em": "*",
+    "code": "`",
+    "del": "~~", "s": "~~", "strike": "~~",
+}
+_LINK_TAGS = {"a", "lnk"}  # Slack uses a custom <lnk href> tag for links
 
 
 class CanvasError(Exception):
@@ -91,6 +100,7 @@ class _CanvasParser(HTMLParser):
         self._depth = 0
         self._counters: dict[int, int] = {}
         self._group = 0
+        self._link_href: list[str] = []
 
     def handle_starttag(self, tag, attrs):
         d = dict(attrs)
@@ -113,6 +123,13 @@ class _CanvasParser(HTMLParser):
                 block["group"] = self._group
             self._cur = block
             self._text = []
+        elif self._cur is not None:
+            # Inline formatting inside the current block
+            if tag in _INLINE_WRAP:
+                self._text.append(_INLINE_WRAP[tag])
+            elif tag in _LINK_TAGS:
+                self._text.append("[")
+                self._link_href.append(d.get("href", ""))
 
     def handle_data(self, data):
         if self._cur is not None:
@@ -131,6 +148,12 @@ class _CanvasParser(HTMLParser):
             self.blocks.append(self._cur)
             self._cur = None
             self._text = []
+        elif self._cur is not None:
+            if tag in _INLINE_WRAP:
+                self._text.append(_INLINE_WRAP[tag])
+            elif tag in _LINK_TAGS:
+                href = self._link_href.pop() if self._link_href else ""
+                self._text.append(f"]({href})")
 
 
 def _block_markdown(block: dict) -> str:

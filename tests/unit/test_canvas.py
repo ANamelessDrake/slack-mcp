@@ -59,6 +59,35 @@ def test_parse_nested_bulleted_list_indents():
     assert data["markdown"] == "- alpha\n- beta\n  - nested one\n  - nested two"
 
 
+def test_inline_formatting_becomes_markdown():
+    # Exactly the tags Slack emits (verified against live canvas output)
+    html = (
+        '<div class="quip-canvas-content">'
+        '<p id="p1" class="line">Has <b>bold</b> and <i>italic</i> and '
+        '<code>code</code> and <del>gone</del> and a '
+        '<lnk href="https://example.com">link</lnk>.</p></div>'
+    )
+    data = canvas.parse_canvas(html)
+    assert data["markdown"] == (
+        "Has **bold** and *italic* and `code` and ~~gone~~ and a "
+        "[link](https://example.com)."
+    )
+    # section text carries the formatting too
+    assert data["sections"][0]["text"].startswith("Has **bold**")
+
+
+def test_inline_formatting_in_list_items():
+    html = (
+        '<div class="quip-canvas-content">'
+        "<div data-section-style='5'><ul id='u'>"
+        "<li id='a'><span id='a'>plain</span></li>"
+        "<li id='b'><span id='b'>has <b>bold</b> word</span></li>"
+        "</ul></div></div>"
+    )
+    data = canvas.parse_canvas(html)
+    assert data["markdown"] == "- plain\n- has **bold** word"
+
+
 def test_two_adjacent_lists_stay_separate():
     # An ordered list immediately followed by a bulleted list: distinct sections
     html = (
