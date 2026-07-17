@@ -24,14 +24,65 @@ def test_parse_canvas_extracts_sections_and_markdown():
     assert data["markdown"] == "# Status\n\nBuild: pending\n\n# Notes\n\nnone yet"
 
 
+ORDERED_HTML = (
+    '<div class="quip-canvas-content">'
+    '<h2 id="h">Steps</h2>'
+    "<div data-section-style='6' class=\"list-numbering-restart-at\">"
+    "<ul id='u1'>"
+    "<li id='o1' value='1'><span id='o1'>first</span><br/></li>"
+    "<li id='o2'><span id='o2'>second</span><br/></li>"
+    "<li id='o3'><span id='o3'>third</span><br/></li>"
+    "</ul></div></div>"
+)
+
+NESTED_HTML = (
+    '<div class="quip-canvas-content">'
+    "<div data-section-style='5' class=\"list-numbering-restart-at\">"
+    "<ul id='u1'>"
+    "<li id='a'><span id='a'>alpha</span><br/></li>"
+    "<li id='b'><span id='b'>beta</span><br/></li>"
+    "<ul>"
+    "<li id='n1'><span id='n1'>nested one</span><br/></li>"
+    "<li id='n2'><span id='n2'>nested two</span><br/></li>"
+    "</ul></ul></div></div>"
+)
+
+
+def test_parse_ordered_list_numbers_items():
+    data = canvas.parse_canvas(ORDERED_HTML)
+    assert data["markdown"] == "## Steps\n\n1. first\n2. second\n3. third"
+    assert [s["section_id"] for s in data["sections"]] == ["h", "o1", "o2", "o3"]
+
+
+def test_parse_nested_bulleted_list_indents():
+    data = canvas.parse_canvas(NESTED_HTML)
+    assert data["markdown"] == "- alpha\n- beta\n  - nested one\n  - nested two"
+
+
+def test_two_adjacent_lists_stay_separate():
+    # An ordered list immediately followed by a bulleted list: distinct sections
+    html = (
+        '<div class="quip-canvas-content">'
+        "<div data-section-style='6'><ul id='u1'>"
+        "<li id='o1'><span id='o1'>step one</span></li></ul></div>"
+        "<div data-section-style='5'><ul id='u2'>"
+        "<li id='b1'><span id='b1'>bullet one</span></li></ul></div></div>"
+    )
+    data = canvas.parse_canvas(html)
+    assert data["markdown"] == "1. step one\n\n- bullet one"
+
+
 def test_parse_handles_lists_and_quotes():
     html = (
         '<div class="quip-canvas-content">'
-        '<h2 id="a">Todo</h2><li id="b">first</li><li id="c">second</li>'
+        "<h2 id=\"a\">Todo</h2>"
+        "<div data-section-style='5'><ul id='u'>"
+        "<li id=\"b\"><span id='b'>first</span></li>"
+        "<li id=\"c\"><span id='c'>second</span></li></ul></div>"
         '<blockquote id="d">note</blockquote></div>'
     )
     data = canvas.parse_canvas(html)
-    assert data["markdown"] == "## Todo\n\n- first\n\n- second\n\n> note"
+    assert data["markdown"] == "## Todo\n\n- first\n- second\n\n> note"
 
 
 def test_read_canvas_surfaces_sections(monkeypatch):

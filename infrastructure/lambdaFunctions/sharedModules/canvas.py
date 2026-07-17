@@ -24,6 +24,9 @@ from sharedModules.slack import agent_client, agent_token, relay_client, relay_t
 # Top-level canvas blocks that carry a targetable id
 _BLOCK_TAGS = {"h1", "h2", "h3", "h4", "h5", "h6", "p", "li", "blockquote"}
 _HEADING_LEVEL = {"h1": "#", "h2": "##", "h3": "###", "h4": "####", "h5": "#####", "h6": "######"}
+# Slack wraps lists in <div data-section-style='N'>: 6 numbers the items, others bullet them
+_ORDERED_STYLE = "6"
+_LIST_INDENT = "  "  # markdown nesting per depth level
 
 
 class CanvasError(Exception):
@@ -74,15 +77,41 @@ def apply_changes(canvas_id: str, changes: list[dict]) -> None:
 
 
 class _CanvasParser(HTMLParser):
+    """Turns canvas HTML into flat blocks, tracking list context so ordered vs
+    bulleted and nesting depth survive. Slack marks a list section with
+    <div data-section-style='N'> and nests with inner <ul>; list items hold
+    their text in a <span> that shares the <li>'s id."""
+
     def __init__(self):
         super().__init__()
         self.blocks: list[dict] = []
         self._cur: dict | None = None
         self._text: list[str] = []
+        self._ordered = False
+        self._depth = 0
+        self._counters: dict[int, int] = {}
+        self._group = 0
 
     def handle_starttag(self, tag, attrs):
-        if tag in _BLOCK_TAGS:
-            self._cur = {"id": dict(attrs).get("id", ""), "type": tag}
+        d = dict(attrs)
+        if tag == "div" and "data-section-style" in d:
+            self._ordered = d["data-section-style"] == _ORDERED_STYLE
+            self._depth = 0
+            self._counters = {}
+            self._group += 1  # each list section is its own group
+        elif tag == "ul":
+            self._depth += 1
+            self._counters[self._depth] = 0
+        elif tag in _BLOCK_TAGS:
+            block = {"id": d.get("id", ""), "type": tag}
+            if tag == "li":
+                depth = max(1, self._depth)
+                self._counters[depth] = self._counters.get(depth, 0) + 1
+                block["depth"] = depth
+                block["ordered"] = self._ordered
+                block["number"] = self._counters[depth]
+                block["group"] = self._group
+            self._cur = block
             self._text = []
 
     def handle_data(self, data):
@@ -90,7 +119,14 @@ class _CanvasParser(HTMLParser):
             self._text.append(data)
 
     def handle_endtag(self, tag):
-        if tag in _BLOCK_TAGS and self._cur is not None:
+        if tag == "div":
+            self._ordered = False
+            self._depth = 0
+            self._counters = {}
+        elif tag == "ul":
+            self._counters.pop(self._depth, None)
+            self._depth = max(0, self._depth - 1)
+        elif tag in _BLOCK_TAGS and self._cur is not None:
             self._cur["text"] = "".join(self._text).strip()
             self.blocks.append(self._cur)
             self._cur = None
@@ -102,7 +138,9 @@ def _block_markdown(block: dict) -> str:
     if tag in _HEADING_LEVEL:
         return f"{_HEADING_LEVEL[tag]} {text}"
     if tag == "li":
-        return f"- {text}"
+        indent = _LIST_INDENT * (block.get("depth", 1) - 1)
+        marker = f"{block.get('number', 1)}." if block.get("ordered") else "-"
+        return f"{indent}{marker} {text}"
     if tag == "blockquote":
         return f"> {text}"
     return text
@@ -120,10 +158,22 @@ def parse_canvas(html: str) -> dict:
         for b in parser.blocks
         if b["id"]
     ]
-    markdown = "\n\n".join(
-        _block_markdown(b) for b in parser.blocks if b["text"] or b["id"]
-    )
-    return {"sections": sections, "markdown": markdown}
+
+    # Consecutive list items join with a single newline so they render as one
+    # list; everything else is separated by a blank line like normal markdown.
+    parts: list[str] = []
+    prev_group: object = None
+    for block in parser.blocks:
+        if not (block["text"] or block["id"]):
+            continue
+        line = _block_markdown(block)
+        group = block.get("group") if block["type"] == "li" else None
+        if group is not None and group == prev_group:
+            parts[-1] += "\n" + line
+        else:
+            parts.append(line)
+        prev_group = group
+    return {"sections": sections, "markdown": "\n\n".join(parts)}
 
 
 def fetch_canvas(channel: str, canvas_id: str) -> dict:
