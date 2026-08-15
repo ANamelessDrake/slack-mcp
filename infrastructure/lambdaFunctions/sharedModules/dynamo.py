@@ -28,6 +28,28 @@ def set_cursor(identity: str, channel: str, last_ts: str) -> None:
     )
 
 
+def cursor_scope(channel: str, mentions_only: bool = False, from_user: str = "") -> str:
+    """Cursor key for one (channel, filter) view.
+
+    A filtered read must track its own read position, separate from the
+    unfiltered one. Otherwise a `mentions_only` poll advances the channel's
+    single cursor past the non-mention messages it skipped, and they are gone for
+    any later unfiltered check: the message is silently consumed by a reader that
+    never returned it. With a per-filter scope, checking with a filter only moves
+    that filter's cursor, so a skipped message is still waiting the next time you
+    check without the filter.
+
+    The unfiltered scope is the bare channel, so cursors written before this
+    existed keep working with no migration.
+    """
+    tags = []
+    if mentions_only:
+        tags.append("m")
+    if from_user:
+        tags.append(f"u:{from_user}")
+    return channel if not tags else f"{channel}#F#{'|'.join(tags)}"
+
+
 def heartbeat_session(identity: str, wait_seconds: int) -> None:
     """Record that this identity is online (a wait_for_messages call is active).
 
@@ -98,8 +120,7 @@ def recent_messages(channel: str, limit: int = 20) -> list[dict]:
     """The last `limit` stored messages in a conversation, oldest first.
     Does not touch read cursors: history reads are non-consuming."""
     resp = messages_table().query(
-        KeyConditionExpression=Key("PK").eq(f"CH#{channel}")
-        & Key("SK").begins_with("TS#"),
+        KeyConditionExpression=Key("PK").eq(f"CH#{channel}") & Key("SK").begins_with("TS#"),
         ScanIndexForward=False,
         Limit=limit,
     )

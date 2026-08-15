@@ -23,6 +23,7 @@ from sharedModules.files import (
     is_image,
     safe_filename,
 )
+from sharedModules.policy import server_instructions
 from starlette.responses import PlainTextResponse, Response
 from starlette.routing import Route
 from tools import register_all
@@ -34,6 +35,7 @@ logging.basicConfig(level=logging.INFO)
 # so Host validation would only 421 legitimate traffic.
 mcp = FastMCP(
     "slack-mcp",
+    instructions=server_instructions(),
     stateless_http=True,
     transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
 )

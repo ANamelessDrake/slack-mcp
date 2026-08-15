@@ -81,9 +81,7 @@ def test_check_accepts_comma_separated_channels(table):
     result = cm.check_messages("C1, C2")
     assert sorted(m["text"] for m in result["messages"]) == ["one", "two"]
     # C3 was untouched and still pending
-    assert [m["text"] for m in cm.check_messages("C3")["messages"]] == [
-        "three, not requested"
-    ]
+    assert [m["text"] for m in cm.check_messages("C3")["messages"]] == ["three, not requested"]
 
 
 def test_check_from_user_filter(table):
@@ -92,6 +90,46 @@ def test_check_from_user_filter(table):
 
     result = cm.check_messages("C1", from_user="U0JUSTIN")
     assert [m["text"] for m in result["messages"]] == ["from justin"]
+
+
+def test_mentions_only_does_not_consume_for_unfiltered_check(table):
+    """The footgun: a mentions_only poll must not swallow a plain message so that
+    a later unfiltered check misses it. Per-filter cursors keep the views apart."""
+    _seed(table, "C1", "1.0", "a plain message, no mention")
+
+    # A mentions-only sweep returns nothing (correct) and, crucially, must not
+    # advance the unfiltered read position past this message.
+    assert cm.check_messages("C1", mentions_only=True)["messages"] == []
+
+    # The unfiltered check still sees it: it was never consumed.
+    assert [m["text"] for m in cm.check_messages("C1")["messages"]] == [
+        "a plain message, no mention"
+    ]
+
+
+def test_each_filter_view_has_its_own_cursor(table):
+    _seed(table, "C1", "1.0", "from justin", user="U0JUSTIN")
+
+    # Consuming via the from_user view moves only that view's cursor
+    assert [m["text"] for m in cm.check_messages("C1", from_user="U0JUSTIN")["messages"]] == [
+        "from justin"
+    ]
+    assert cm.check_messages("C1", from_user="U0JUSTIN")["messages"] == []
+
+    # The unfiltered view still has it pending, then consumes independently
+    assert [m["text"] for m in cm.check_messages("C1")["messages"]] == ["from justin"]
+    assert cm.check_messages("C1")["messages"] == []
+
+
+def test_unfiltered_cursor_key_is_backward_compatible(table):
+    """The unfiltered scope must be the bare channel, so pre-existing cursors and
+    other tools that read get_cursor(identity, channel) keep lining up."""
+    _seed(table, "C1", "1.0", "hello")
+    cm.check_messages("C1")
+    assert dynamo.get_cursor("wilma", "C1") == "1.0"
+    assert dynamo.cursor_scope("C1") == "C1"
+    assert dynamo.cursor_scope("C1", mentions_only=True) == "C1#F#m"
+    assert dynamo.cursor_scope("C1", from_user="U9") == "C1#F#u:U9"
 
 
 def test_wait_multi_channel_ignores_unwatched_without_consuming(table, monkeypatch):

@@ -1,6 +1,6 @@
 import time
 
-from sharedModules.dynamo import heartbeat_session, set_cursor
+from sharedModules.dynamo import cursor_scope, heartbeat_session, set_cursor
 from sharedModules.events import EventSubscription
 from sharedModules.identity import current_agent_id
 
@@ -25,6 +25,9 @@ def wait_for_messages(
     returned. Set mentions_only to true to wake only for messages that
     @mention you; set from_user to a user ID (from find_user) to wake only for
     that person's messages.
+
+    As with check_messages, each filter keeps its own read position, so waiting
+    with a filter never consumes messages for an unfiltered check later.
     """
     identity = current_agent_id()
     timeout = max(5, min(int(timeout_seconds), MAX_WAIT_SECONDS))
@@ -55,7 +58,10 @@ def wait_for_messages(
             # whoever does watch them, so no cursor movement here.
             if watched and event.get("channel") not in watched:
                 continue
-            set_cursor(identity, event["channel"], event["ts"])
+            # Advance the cursor for this filter view only, matching the backlog
+            # drain above, so a filtered wait never consumes another view's mail.
+            scope = cursor_scope(event["channel"], mentions_only, from_user)
+            set_cursor(identity, scope, event["ts"])
             if event.get("agent_id", "") == identity:
                 continue
             if mentions_only and identity not in event.get("mentions_agents", []):

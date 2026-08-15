@@ -48,6 +48,7 @@ def _message_expiry() -> int | None:
         return None
     return int(time.time()) + days * 24 * 3600
 
+
 _TABLE = None
 _USER_NAMES: dict[str, str] = {}
 _AGENT_BY_BOT_USER: dict[str, str] | None = None
@@ -67,9 +68,7 @@ def _signing_secrets() -> tuple[str, ...]:
         return (direct,)
     client = boto3.client("secretsmanager")
     names = os.environ["SIGNING_SECRET_NAMES"].split(",")
-    return tuple(
-        client.get_secret_value(SecretId=name.strip())["SecretString"] for name in names
-    )
+    return tuple(client.get_secret_value(SecretId=name.strip())["SecretString"] for name in names)
 
 
 @lru_cache(maxsize=1)
@@ -224,11 +223,17 @@ def handler(event, _context):
 
     metadata = ev.get("metadata") or {}
     agent_payload = (
-        metadata.get("event_payload") or {}
-        if metadata.get("event_type") == "agent_message"
-        else {}
+        metadata.get("event_payload") or {} if metadata.get("event_type") == "agent_message" else {}
     )
-    agent_id = str(agent_payload.get("agent_id", ""))
+    # Metadata is the primary attribution, but a file upload (files_upload_v2)
+    # cannot carry message metadata, so fall back to mapping the posting bot's
+    # user id to its agent. Without this an agent's own file post records as a
+    # plain bot message: it would escape the turn-budget guardrail and echo back
+    # to the agent on its next read (check_messages skips only items whose
+    # agent_id is its own).
+    agent_id = str(agent_payload.get("agent_id", "")) or _agent_mention_map().get(
+        ev.get("user", ""), ""
+    )
     text = ev.get("text", "")
     sender = ev.get("user") or ev.get("bot_id") or ""
     mentions = re.findall(r"<@([A-Z0-9]+)>", text)
@@ -247,9 +252,7 @@ def handler(event, _context):
         "agent_id": agent_id,
         "mentions": mentions,
         "mention_names": [_resolve_user_name(m) for m in mentions],
-        "mentions_agents": [
-            agent for uid in mentions if (agent := _agent_mention_map().get(uid))
-        ],
+        "mentions_agents": [agent for uid in mentions if (agent := _agent_mention_map().get(uid))],
         "slack_event_id": payload.get("event_id", ""),
         # Enough for an agent to decide whether to read or download; the bytes
         # stay in Slack and are fetched on demand via the FILE# records below.

@@ -1,3 +1,5 @@
+import base64
+
 import tools.list_channels as lc
 import tools.read_thread as rt
 import tools.send_message as sm
@@ -31,6 +33,9 @@ class FakeClient:
     def conversations_open(self, **kwargs):
         self.calls.append(("conversations.open", kwargs))
         return {"channel": {"id": self.dm_channel}}
+
+    def files_upload_v2(self, **kwargs):
+        return self._call("files.upload_v2", **kwargs)
 
     def users_list(self, **kwargs):
         return self._call("users.list", **kwargs)
@@ -137,6 +142,124 @@ def test_guardrail_veto_blocks_send(monkeypatch):
     assert all(method != "chat.postMessage" for method, _ in fake.calls)
 
 
+def test_file_upload_to_channel_uses_upload_and_returns_file_id(monkeypatch):
+    _no_veto(monkeypatch)
+    fake = FakeClient(
+        response={
+            "files": [
+                {
+                    "id": "F1",
+                    "name": "report.pdf",
+                    "shares": {"public": {"C123": [{"ts": "99.0"}]}},
+                }
+            ]
+        }
+    )
+    monkeypatch.setattr(sm, "agent_client", lambda agent_id: fake)
+
+    content = base64.b64encode(b"%PDF-1.4 fake").decode()
+    result = sm.send_message(
+        "C123", "here is the report", file_base64=content, file_name="report.pdf"
+    )
+
+    assert result == {
+        "ok": True,
+        "channel": "C123",
+        "ts": "99.0",
+        "agent_id": "wilma",
+        "file_id": "F1",
+        "file_name": "report.pdf",
+    }
+    method, kwargs = fake.calls[0]
+    assert method == "files.upload_v2"
+    assert kwargs["channel"] == "C123"
+    assert kwargs["filename"] == "report.pdf"
+    assert kwargs["file"] == b"%PDF-1.4 fake"
+    assert kwargs["initial_comment"] == "here is the report"
+    # A file post uses upload, never chat.postMessage
+    assert all(method != "chat.postMessage" for method, _ in fake.calls)
+
+
+def test_file_upload_passes_thread_ts(monkeypatch):
+    _no_veto(monkeypatch)
+    fake = FakeClient(response={"files": [{"id": "F1", "name": "a.txt"}]})
+    monkeypatch.setattr(sm, "agent_client", lambda agent_id: fake)
+
+    content = base64.b64encode(b"hi").decode()
+    sm.send_message("C123", "note", thread_ts="5.0", file_base64=content, file_name="a.txt")
+
+    _, kwargs = fake.calls[0]
+    assert kwargs["thread_ts"] == "5.0"
+
+
+def test_file_upload_to_dm_resolves_user_then_uploads(monkeypatch):
+    _no_veto(monkeypatch)
+    fake = FakeClient(response={"files": [{"id": "F2", "name": "x.txt"}]}, dm_channel="D0NEW")
+    monkeypatch.setattr(sm, "agent_client", lambda agent_id: fake)
+    monkeypatch.setattr(sm, "channel_known", lambda ch: True)
+
+    content = base64.b64encode(b"hi").decode()
+    result = sm.send_message("U0PERSON", "for you", file_base64=content, file_name="x.txt")
+
+    assert result["ok"] is True
+    assert result["channel"] == "D0NEW"
+    assert fake.calls[0][0] == "conversations.open"
+    method, kwargs = fake.calls[1]
+    assert method == "files.upload_v2"
+    assert kwargs["channel"] == "D0NEW"
+
+
+def test_file_upload_requires_file_name(monkeypatch):
+    _no_veto(monkeypatch)
+    fake = FakeClient(response={"files": [{"id": "F1"}]})
+    monkeypatch.setattr(sm, "agent_client", lambda agent_id: fake)
+
+    content = base64.b64encode(b"data").decode()
+    result = sm.send_message("C123", "x", file_base64=content)
+
+    assert result["ok"] is False
+    assert "file_name" in result["error"]
+    assert fake.calls == []  # nothing sent to Slack
+
+
+def test_file_upload_rejects_bad_base64(monkeypatch):
+    _no_veto(monkeypatch)
+    fake = FakeClient(response={})
+    monkeypatch.setattr(sm, "agent_client", lambda agent_id: fake)
+
+    result = sm.send_message("C123", "x", file_base64="not!valid!base64", file_name="a.txt")
+
+    assert result["ok"] is False
+    assert "base64" in result["error"]
+    assert fake.calls == []
+
+
+def test_file_upload_rejects_oversize(monkeypatch):
+    _no_veto(monkeypatch)
+    fake = FakeClient(response={})
+    monkeypatch.setattr(sm, "agent_client", lambda agent_id: fake)
+    monkeypatch.setattr(sm, "max_bytes", lambda: 4)
+
+    content = base64.b64encode(b"way past the tiny cap").decode()
+    result = sm.send_message("C123", "x", file_base64=content, file_name="big.bin")
+
+    assert result["ok"] is False
+    assert "limit" in result["error"]
+    assert fake.calls == []
+
+
+def test_file_upload_respects_guardrail_veto(monkeypatch):
+    fake = FakeClient(response={"files": [{"id": "F1"}]})
+    monkeypatch.setattr(sm, "agent_client", lambda agent_id: fake)
+    monkeypatch.setattr(sm, "agent_send_veto", lambda *a: "Turn budget reached")
+
+    content = base64.b64encode(b"data").decode()
+    result = sm.send_message("C123", "x", file_base64=content, file_name="a.txt")
+
+    assert result == {"ok": False, "error": "Turn budget reached"}
+    assert all(method != "files.upload_v2" for method, _ in fake.calls)
+
+
 def test_find_user_matches_and_paginates(monkeypatch):
     import tools.find_user as fu
 
@@ -171,11 +294,22 @@ def test_find_user_matches_and_paginates(monkeypatch):
 
     monkeypatch.setattr(fu, "relay_client", lambda: FakeRelay())
 
+    # DM enrichment queries the agent app; give it no existing DMs
+    class FakeAgent:
+        def conversations_list(self, **kwargs):
+            return {"channels": [], "response_metadata": {"next_cursor": ""}}
+
+    from sharedModules import conversations
+
+    monkeypatch.setattr(conversations, "agent_client", lambda _: FakeAgent())
+
     result = fu.find_user("susan")
 
     assert result["ok"] is True
     assert [u["id"] for u in result["users"]] == ["U1", "U3"]
     assert result["users"][0]["name"] == "Susan Redman"
+    # No prior DM, so the field is present and empty, not fabricated
+    assert result["users"][0]["dm_channel_id"] == ""
 
 
 def test_read_thread_maps_messages(monkeypatch):

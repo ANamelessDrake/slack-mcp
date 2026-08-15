@@ -87,6 +87,9 @@ class LambdaFunctionsStack(Stack):
                 "MCP_TOKEN_SECRET_PREFIX": f"{secret_prefix}-McpToken-",
                 "AGENT_IDS": ",".join(a["id"] for a in config["agents"]),
                 "DEFAULT_AGENT_ID": config["default_agent_id"],
+                # Names the owner in the server's confidentiality policy
+                # (sharedModules/policy.py); optional, generic phrasing if unset.
+                "OWNER_NAME": config.get("owner_name", ""),
                 "AGENT_TURN_BUDGET": str(config.get("agent_turn_budget", 6)),
                 "AGENT_COOLDOWN_SECONDS": str(config.get("agent_cooldown_seconds", 3)),
                 "MAX_FILE_DOWNLOAD_MB": str(config.get("max_file_download_mb", 10)),

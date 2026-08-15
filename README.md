@@ -133,14 +133,15 @@ Then just talk: "send a message to the test channel", "any new Slack messages?",
 | Tool | Parameters | What it does |
 |---|---|---|
 | `send_message` | `channel`, `text`, `thread_ts?` | Post to a channel, thread, or person (user ID = DM); supports real @mentions via `<@USERID>`; first DM contact auto-appends a reply-expectations note |
-| `check_messages` | `channel?` (one, several comma-separated, or all), `limit?`, `mentions_only?`, `from_user?` | Return everything new since the last check (cursor-based) |
+| `check_messages` | `channel?` (channel/DM/user ID, several comma-separated, or all), `limit?`, `mentions_only?`, `from_user?` | Return everything new since the last check (cursor-based); a user ID reads that person's DM; an unusable channel errors rather than returning empty |
 | `wait_for_messages` | `timeout_seconds?` (max 840), `channel?` (one, several, or all), `mentions_only?`, `from_user?` | Block until the next matching message arrives or the timeout passes |
-| `read_history` | `channel`, `limit?` | Recent conversation history (channels and DMs), without marking anything read |
+| `read_history` | `channel` (channel/DM/user ID), `limit?` | Recent history of one conversation (channels and DMs), without marking anything read |
 | `read_thread` | `channel`, `thread_ts`, `limit?` | Read a full thread |
-| `list_channels` | none | Channels the system can see, with membership flags |
+| `list_channels` | none | Channels the system can see, with membership flags (DMs excluded, use `list_dms`) |
+| `list_dms` | none | DM conversations: DM ID, the other person's user ID and name, last activity, unread count |
 | `list_members` | `channel` | Who is in a conversation: id, name, and whether it's a bot |
 | `find_channel` | `name` | Look up a channel's ID by name |
-| `find_user` | `name` | Look up a person's user ID by name, for DMs and @mentions |
+| `find_user` | `name` | Look up a person by name: user ID plus their `dm_channel_id`, for DMs and @mentions |
 | `read_file` | `file_id` | Read an attachment: images come back viewable, text and code as text |
 | `download_file` | `file_id` | Get an authenticated URL (and curl command) to save any attachment to disk |
 | `read_canvas` | `channel` | Read a channel's canvas: title, sections (with ids), and markdown |

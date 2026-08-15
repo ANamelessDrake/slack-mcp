@@ -11,6 +11,10 @@ def list_channels() -> dict:
     send_message and read_thread require. Only channels where `is_member` is
     true can receive messages. Private channels appear only if the system has
     been invited to them (`is_private` true).
+
+    Direct messages are NOT included here and never will be: Slack's channel
+    listing cannot enumerate them. To find a DM conversation use list_dms, or
+    find_user for a specific person.
     """
     try:
         resp = relay_client().conversations_list(

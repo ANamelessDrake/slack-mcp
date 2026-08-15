@@ -86,9 +86,7 @@ def _items(table_name="test-messages"):
 
 
 def test_url_verification_echoes_challenge(ingest):
-    resp = ingest.handler(
-        _signed_event({"type": "url_verification", "challenge": "abc123"}), None
-    )
+    resp = ingest.handler(_signed_event({"type": "url_verification", "challenge": "abc123"}), None)
     assert resp == {"statusCode": 200, "body": "abc123"}
 
 
@@ -131,6 +129,45 @@ def test_agent_metadata_sets_sender(ingest):
     assert item["user"] == "B9"
 
 
+def test_agent_file_post_attributed_by_bot_user_id(ingest):
+    # A file upload (files_upload_v2) carries no agent_message metadata, so the
+    # posting bot's user id must still map the post to its agent. Otherwise it
+    # records as a plain bot message and echoes back to the agent on next read.
+    table = boto3.resource("dynamodb", region_name="us-east-1").Table("test-messages")
+    table.put_item(
+        Item={"PK": "AGENTS", "SK": "AGENT#wilma", "agent_id": "wilma", "bot_user_id": "U0WILMABOT"}
+    )
+    ingest._AGENT_BY_BOT_USER = None  # drop per-container cache
+
+    body = _message_callback(
+        text="here is the file", user="U0WILMABOT", bot_id="B1", subtype="file_share"
+    )
+    body["event"]["files"] = [
+        {
+            "id": "F0OUT",
+            "name": "out.pdf",
+            "mimetype": "application/pdf",
+            "size": 10,
+            "url_private": "https://files.slack.com/files-pri/T1-F0OUT/out.pdf",
+        }
+    ]
+    ingest.handler(_signed_event(body), None)
+
+    item = _items()[0]
+    assert item["sender_type"] == "agent"
+    assert item["agent_id"] == "wilma"
+
+
+def test_unregistered_bot_post_stays_bot(ingest):
+    # No metadata and a bot user id that is not a registered agent stays a bot.
+    body = _message_callback(user="U0RANDOMBOT", bot_id="B2")
+    ingest.handler(_signed_event(body), None)
+
+    item = _items()[0]
+    assert item["sender_type"] == "bot"
+    assert item["agent_id"] == ""
+
+
 def test_duplicate_delivery_is_idempotent(ingest):
     body = _message_callback()
     ingest.handler(_signed_event(body), None)
@@ -160,12 +197,8 @@ def test_user_names_resolved_and_cached(ingest, monkeypatch):
     monkeypatch.setattr(ingest, "_lookup_user", fake_lookup)
     ingest._USER_NAMES.clear()
 
-    ingest.handler(
-        _signed_event(_message_callback(text="hey <@U0AGENT1>", ts="1.0")), None
-    )
-    ingest.handler(
-        _signed_event(_message_callback(text="again <@U0AGENT1>", ts="2.0")), None
-    )
+    ingest.handler(_signed_event(_message_callback(text="hey <@U0AGENT1>", ts="1.0")), None)
+    ingest.handler(_signed_event(_message_callback(text="again <@U0AGENT1>", ts="2.0")), None)
 
     items = {i["SK"]: i for i in _items() if i["PK"] == "CH#C123"}
     assert items["TS#1.0"]["user_name"] == "Justin Bard"
@@ -189,9 +222,7 @@ def test_lookup_failure_never_blocks_ingest(ingest, monkeypatch):
 
 
 def test_accepts_signature_from_any_known_app_secret(ingest, monkeypatch):
-    monkeypatch.setattr(
-        ingest, "_signing_secrets", lambda: ("relay-secret", SIGNING_SECRET)
-    )
+    monkeypatch.setattr(ingest, "_signing_secrets", lambda: ("relay-secret", SIGNING_SECRET))
     # Signed with the second secret (an agent app's), still accepted
     resp = ingest.handler(_signed_event(_message_callback()), None)
     assert resp["statusCode"] == 200
@@ -205,8 +236,12 @@ def test_accepts_signature_from_any_known_app_secret(ingest, monkeypatch):
 def test_mentions_route_to_registered_agents(ingest):
     table = boto3.resource("dynamodb", region_name="us-east-1").Table("test-messages")
     table.put_item(
-        Item={"PK": "AGENTS", "SK": "AGENT#claude", "agent_id": "claude",
-              "bot_user_id": "U0CLAUDEBOT"}
+        Item={
+            "PK": "AGENTS",
+            "SK": "AGENT#claude",
+            "agent_id": "claude",
+            "bot_user_id": "U0CLAUDEBOT",
+        }
     )
     ingest._AGENT_BY_BOT_USER = None  # drop per-container cache
 
@@ -249,9 +284,9 @@ def test_channel_registry_tracks_conversations(ingest):
     ingest.handler(_signed_event(_message_callback(channel="D0DM99", ts="2.0")), None)
 
     table = boto3.resource("dynamodb", region_name="us-east-1").Table("test-messages")
-    rows = table.query(
-        KeyConditionExpression=boto3.dynamodb.conditions.Key("PK").eq("CHANNELS")
-    )["Items"]
+    rows = table.query(KeyConditionExpression=boto3.dynamodb.conditions.Key("PK").eq("CHANNELS"))[
+        "Items"
+    ]
     assert sorted(r["SK"] for r in rows) == ["CH#C123", "CH#D0DM99"]
 
 

@@ -128,7 +128,7 @@ def test_thread_scope_does_not_count_channel_messages(table, monkeypatch):
     assert veto is not None
 
 
-def test_mentions_only_filters_and_consumes(table):
+def test_mentions_only_filters_without_consuming_unfiltered(table):
     table.put_item(Item={"PK": "CHANNELS", "SK": "CH#C1", "channel": "C1"})
     table.put_item(
         Item={
@@ -147,5 +147,11 @@ def test_mentions_only_filters_and_consumes(table):
 
     result = cm.check_messages("C1", mentions_only=True)
     assert [m["text"] for m in result["messages"]] == ["hey wilma"]
-    # Skipped messages were consumed, not deferred
-    assert cm.check_messages("C1")["messages"] == []
+    # The mentions view consumed its own read position
+    assert cm.check_messages("C1", mentions_only=True)["messages"] == []
+    # ...but the skipped non-mention message is NOT consumed for an unfiltered
+    # check: per-filter cursors keep the views independent, so nothing is lost.
+    assert [m["text"] for m in cm.check_messages("C1")["messages"]] == [
+        "not for you",
+        "hey wilma",
+    ]

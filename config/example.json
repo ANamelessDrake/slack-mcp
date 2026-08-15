@@ -7,6 +7,7 @@
   "project_name_upper": "SlackMcp",
   "alarm_email": "you@example.com",
   "message_retention_days": 30,
+  "owner_name": "",
   "default_agent_id": "claude",
   "agents": [
     {

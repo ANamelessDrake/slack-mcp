@@ -11,6 +11,7 @@ Real config files are gitignored because they carry your AWS account id and emai
 | `project_name` / `project_name_upper` | Project label used in resource names (`slackmcp` / `SlackMcp`) |
 | `alarm_email` | Destination for CloudWatch alarms (used from the monitoring milestone onward) |
 | `message_retention_days` | How long stored Slack messages live in DynamoDB (default 30; `0` keeps them forever) |
+| `owner_name` | Names the owner in the server's confidentiality policy, which tells agents not to relay the owner's email or private messages to others without permission (optional; generic phrasing if empty) |
 | `default_agent_id` | Agent identity bound to the legacy DevBearerToken (per-agent McpToken secrets map to their own identities) |
 | `agents` | One entry per agent Slack app; `id` is used in secret names and message attribution |
 | `agent_turn_budget` | Max consecutive agent messages in a conversation with no human reply (default 6) |
