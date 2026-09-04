@@ -213,8 +213,9 @@ delivery per message.
   `users:read`; event subscriptions `message.channels`, `message.im`; request URL =
   ingest Function URL; signing secret stored in Secrets Manager and verified on every
   request (HMAC of timestamp + body, 5-minute timestamp window against replay).
-- **Agent apps**: bot scopes `chat:write`, `im:write` only. No event subscriptions, no
-  request URL, so no signing secret needed beyond the unused default.
+- **Agent apps**: bot scopes `chat:write`, `im:write`, `files:write` (posting file
+  attachments), and `files:read` (reading attachments in the agent's own DMs). No event
+  subscriptions, no request URL, so no signing secret needed beyond the unused default.
 - Both are defined by app manifests committed under `docs/slack-manifests/`, so adding
   an agent is: create app from manifest, install to workspace, store the bot token as
   `{Env}-{Project}-BotToken-{agent_id}`, and register the agent (section 5).

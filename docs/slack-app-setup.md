@@ -125,6 +125,14 @@ the server fetches those with the agent's own token. Without the scope, Slack
 answers with its login page and the read fails with a clear error. Add
 `files:read` under the agent app's OAuth & Permissions and reinstall it.
 
+**Posting attachments needs `files:write` on the agent app.** When
+`send_message` is given a file (`file_base64` + `file_name`), it uploads with
+the agent's own token, so the agent app must have `files:write` (the manifest
+template includes it). Without the scope the upload fails with `missing_scope`;
+the message itself still needs the bot to be a member of the target channel,
+the same rule as posting text. If you created the agent app before this scope
+existed, add `files:write` under its OAuth & Permissions and reinstall it.
+
 ## 7. Verify
 
 With the stacks deployed and tokens stored, call the `list_channels` tool from any

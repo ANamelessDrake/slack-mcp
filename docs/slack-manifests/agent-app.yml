@@ -17,6 +17,8 @@ oauth_config:
   scopes:
     bot:
       - chat:write
+      # Posting file attachments with send_message (outbound uploads).
+      - files:write
       - im:write
       # Only needed for two-way DMs: the relay cannot see files in an
       # agent's DM, so the agent reads its own DM attachments.
