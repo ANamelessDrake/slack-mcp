@@ -1,4 +1,4 @@
-mcp>=1.10
+mcp>=1.10,<2
 slack-sdk>=3.27
 uvicorn>=0.30
 websocket-client>=1.8
