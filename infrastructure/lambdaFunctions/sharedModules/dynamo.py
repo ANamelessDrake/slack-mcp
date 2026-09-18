@@ -109,6 +109,15 @@ def register_channel(channel: str, channel_type: str = "") -> None:
     )
 
 
+def channel_type(channel: str) -> str:
+    """The stored channel_type for a conversation, or "" if never seen.
+
+    Lets a caller tell an event-driven conversation (channel/group/im) from a
+    group DM (mpim), which is polled rather than pushed."""
+    resp = messages_table().get_item(Key={"PK": "CHANNELS", "SK": f"CH#{channel}"})
+    return resp.get("Item", {}).get("channel_type", "")
+
+
 def list_known_channels() -> list[str]:
     """Every conversation the ingest has seen a message in, including agent DMs
     that Slack's channel-listing APIs cannot enumerate."""

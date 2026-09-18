@@ -5,6 +5,7 @@ from sharedModules.dynamo import (
     get_cursor,
     messages_after,
     recent_messages,
+    register_channel,
 )
 from sharedModules.identity import current_agent_id
 from sharedModules.slack import relay_client
@@ -20,16 +21,18 @@ def list_dms() -> dict:
     """List your direct and group message conversations and who is in each.
 
     Use this whenever you need a DM's conversation ID (D0123456789), a group DM's
-    ID (G0123456789), or want to see which conversations have messages waiting
-    that you have not read. Slack's channel listing cannot enumerate DMs or group
-    DMs, so list_channels and find_channel will never show them: this is the only
-    tool that does.
+    conversation ID, or want to see which conversations have messages waiting that
+    you have not read. Slack's channel listing cannot enumerate DMs or group DMs,
+    so list_channels and find_channel will never show them: this is the only tool
+    that does.
 
-    Each entry has the conversation `id`, `is_group_chat` (true for a
-    multi-person group DM), and `members`, a list of {id, name} for the people in
-    it. For a one-to-one DM, `user` and `user_name` name the other person and
-    `members` has that one person; for a group DM, `user` is empty and
-    `user_name` joins the members' names. Each entry also has `last_activity_ts`
+    Each entry has the conversation `id`, `is_group_chat` (true for a multi-person
+    group DM), and `members`, a list of {id, name} for the people in it. Do not
+    infer the kind from the id prefix: a group DM's id may look like a channel id
+    (it can start with C, not only G), so rely on `is_group_chat`. For a
+    one-to-one DM, `user` and `user_name` name the other person and `members` has
+    that one person; for a group DM, `user` is empty and `user_name` joins the
+    members' names. Each entry also has `last_activity_ts`
     (empty when nothing is stored yet) and `unread_count`, how many messages from
     others sit after your check_messages read position, counted up to 50. Most
     recent activity first.
@@ -55,6 +58,9 @@ def list_dms() -> dict:
         pending = messages_after(channel, get_cursor(agent_id, channel), UNREAD_SCAN_LIMIT)
         latest = recent_messages(channel, 1)
         if conv["is_group"]:
+            # Mark it a group DM so check_messages knows to pull its history on
+            # demand (Slack does not push group DMs to the event ingest).
+            register_channel(channel, "mpim")
             members = _group_members(agent_id, channel)
             user = ""
             user_name = ", ".join(m["name"] for m in members if m["name"])

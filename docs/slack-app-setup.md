@@ -107,20 +107,30 @@ DM conversations are ingested and delivered like channels (they appear in
 `read_thread` cannot read agent DMs, because it reads via the relay, which is not
 part of that conversation.
 
-**Group DMs (multi-person DMs)** work through the agent app, not the relay: the
-relay is not a member of the group, and Slack fixes a group DM's membership at
-creation, so the relay cannot be added afterward. The manifest template already
-requests `im:read` (needed for `list_dms` to enumerate one-to-one DMs at all),
-`mpim:history`, and `mpim:read`. An agent app created before these scopes
-existed will not have them; add them under OAuth & Permissions and reinstall, or
-`list_dms` returns a missing_scope error naming what to add. To let the agent read a group DM it is
-in, enable the agent's Event Subscriptions exactly as above and include the
-`message.mpim` bot event alongside `message.im`; the agent posts to the group
-with its normal `chat:write`. The agent must already be a member of the group
-DM, and `list_dms` enumerates the group DMs it is in (id starting with `G`),
-with each one's members. Reading attachments posted inside a group DM is not
-wired yet: those files need the agent's token and the file records do not yet
-carry the conversation type to route it.
+**Group DMs (multi-person DMs)** are read by polling, not by events. Slack does
+not reliably deliver the `message.mpim` event to bots (on a granular-scope app
+it cannot even be subscribed), so group DMs never reach the event ingest. Their
+history is still readable by pull: the agent is a member and has `mpim:history`,
+so `check_messages`, when given a group DM's id, fetches that group's latest
+history on demand and returns what is new. There is no event subscription to set
+up for group DMs, and the relay is not involved; the agent reads its own.
+
+Setup is scopes only, on the agent app: `mpim:history` (read the history) and
+`mpim:read` (list the group DMs and their members), plus `im:read` (needed for
+`list_dms` to enumerate one-to-one DMs at all). The manifest template requests
+all three; an agent app created before they existed will not have them, so add
+them under OAuth & Permissions and reinstall, or `list_dms` returns a
+missing_scope error naming what to add. The agent posts to a group DM with its
+normal `chat:write`, and must already be a member of the group.
+
+`list_dms` enumerates the group DMs the agent is in, with each one's members, and
+marks each so `check_messages` knows to pull it. Do not infer the kind from the
+id: a group DM's id can start with `C`, like a channel, not only `G`. Two limits
+follow from polling: there is no instant wake for a group DM (`wait_for_messages`
+cannot fire on something Slack never pushes), so a group DM is seen when its id
+is checked, not the moment someone posts; and the empty-channel sweep does not
+pull group DMs, so name a group DM's id to get its newest messages. Reading
+attachments posted inside a group DM is not wired yet.
 
 ## 6. Attachments
 

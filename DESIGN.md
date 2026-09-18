@@ -216,9 +216,11 @@ delivery per message.
 - **Agent apps**: bot scopes `chat:write`, `im:write`, `im:read` (listing its own DMs),
   `files:write` (posting file attachments), `files:read` (reading attachments in the
   agent's own DMs), and `mpim:history` / `mpim:read` (listing and reading group DMs the
-  agent is a member of). Send-only by
-  default with no event subscriptions or request URL; two-way DMs and group DMs add
-  `message.im` / `message.mpim` on the agent app and then need its signing secret stored.
+  agent is a member of). Send-only by default with no event subscriptions or request URL;
+  two-way DMs add `message.im` on the agent app and then need its signing secret stored.
+  Group DMs are read by on-demand polling, not events: Slack does not deliver
+  `message.mpim` to bots, so `check_messages` pulls a named group DM's history with the
+  agent's own token instead of subscribing to it.
 - Both are defined by app manifests committed under `docs/slack-manifests/`, so adding
   an agent is: create app from manifest, install to workspace, store the bot token as
   `{Env}-{Project}-BotToken-{agent_id}`, and register the agent (section 5).

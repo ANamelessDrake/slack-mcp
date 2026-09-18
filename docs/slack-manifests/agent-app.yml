@@ -22,8 +22,10 @@ oauth_config:
       - im:write
       # Listing the agent's own DMs (list_dms, find_user dm_channel_id).
       - im:read
-      # Group DMs (multi-person DMs): the agent participates directly and the
-      # relay is not a member, so the agent's own app lists and reads them.
+      # Group DMs (multi-person DMs): the agent participates directly, so its own
+      # app lists them (mpim:read) and pulls their history (mpim:history).
+      # check_messages polls a named group DM with this token; Slack does not
+      # deliver message.mpim to bots, so there is no group-DM event to subscribe.
       - mpim:history
       - mpim:read
       # Only needed for two-way DMs: the relay cannot see files in an
@@ -33,12 +35,11 @@ settings:
   org_deploy_enabled: false
   socket_mode_enabled: false
   token_rotation_enabled: false
-  # Two-way DMs and group DMs: uncomment after storing this app's signing secret
+  # Two-way DMs: uncomment after storing this app's signing secret
   # ({Env}-{Project}-SigningSecret-<agent_id>) so ingest can verify the
-  # URL-verification ping. Same request URL as the relay app. message.im covers
-  # one-to-one DMs; message.mpim covers group DMs the agent is a member of.
+  # URL-verification ping. Same request URL as the relay app. (Group DMs need no
+  # event here: they are polled on demand, not pushed.)
   # event_subscriptions:
   #   request_url: https://REPLACE-WITH-INGEST-FUNCTION-URL/
   #   bot_events:
   #     - message.im
-  #     - message.mpim

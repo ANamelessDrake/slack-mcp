@@ -1,5 +1,6 @@
 from sharedModules.conversations import ChannelArgumentError, resolve_conversation
 from sharedModules.dynamo import (
+    channel_type,
     cursor_scope,
     get_cursor,
     list_known_channels,
@@ -7,6 +8,7 @@ from sharedModules.dynamo import (
     set_cursor,
 )
 from sharedModules.identity import current_agent_id
+from sharedModules.mpim import pull_mpim_history
 from slack_sdk.errors import SlackApiError
 
 from .send_message import _slack_error
@@ -35,6 +37,11 @@ def check_messages(
     or from_user only advances that filter's cursor, so a message it skips is
     still waiting the next time you check without the filter. It is never
     silently consumed.
+
+    Naming a group DM (multi-person DM) checks it live: Slack does not push those
+    to us, so this pulls the group's latest history on demand and then returns
+    what is new. The empty-channel sweep does not pull group DMs, so to see a
+    group DM's newest messages, name its id.
     """
     identity = current_agent_id()
     requested = [c.strip() for c in channel.split(",") if c.strip()]
@@ -52,6 +59,11 @@ def check_messages(
 
     new_messages = []
     for ch in channels:
+        # A named conversation that is not event-driven may be a group DM; pull
+        # its history on demand before reading. The sweep (no channel named)
+        # skips this to stay fast.
+        if requested:
+            _pull_if_group_dm(identity, ch)
         # Per-filter read position: skipping a message under one filter must not
         # consume it for a check under a different filter (or none).
         scope = cursor_scope(ch, mentions_only, from_user)
@@ -85,3 +97,19 @@ def check_messages(
             )
 
     return {"ok": True, "messages": new_messages}
+
+
+def _pull_if_group_dm(identity: str, ch: str) -> None:
+    """Freshen a group DM's stored history before reading it.
+
+    Only conversations already known to be group DMs are pulled: channel_type is
+    set to mpim when list_dms discovers one (or a prior pull registered it). Every
+    other named conversation is event-driven and already current, so it is read
+    straight from the store with no Slack call. A pull failure is swallowed: the
+    store read still runs, so a transient error never fails the whole check."""
+    if channel_type(ch) != "mpim":
+        return
+    try:
+        pull_mpim_history(identity, ch)
+    except SlackApiError:
+        pass

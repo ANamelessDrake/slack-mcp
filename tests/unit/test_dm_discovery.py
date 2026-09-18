@@ -218,6 +218,8 @@ def test_list_dms_includes_group_chats(table, monkeypatch):
     assert "Emily" in group["user_name"] and "Susan" in group["user_name"]
     assert group["unread_count"] == 1
     assert group["last_activity_ts"] == "9.0"
+    # Discovering the group marks it mpim so check_messages knows to pull it
+    assert dynamo.channel_type("G0GROUP") == "mpim"
     # One-to-one DMs still shape correctly alongside group chats
     dm = next(d for d in result["dms"] if d["id"] == "D1")
     assert dm["is_group_chat"] is False
