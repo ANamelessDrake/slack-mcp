@@ -107,6 +107,18 @@ DM conversations are ingested and delivered like channels (they appear in
 `read_thread` cannot read agent DMs, because it reads via the relay, which is not
 part of that conversation.
 
+**Group DMs (multi-person DMs)** work through the agent app, not the relay: the
+relay is not a member of the group, and Slack fixes a group DM's membership at
+creation, so the relay cannot be added afterward. The manifest template already
+requests `mpim:history` and `mpim:read`. To let the agent read a group DM it is
+in, enable the agent's Event Subscriptions exactly as above and include the
+`message.mpim` bot event alongside `message.im`; the agent posts to the group
+with its normal `chat:write`. The agent must already be a member of the group
+DM, and `list_dms` enumerates the group DMs it is in (id starting with `G`),
+with each one's members. Reading attachments posted inside a group DM is not
+wired yet: those files need the agent's token and the file records do not yet
+carry the conversation type to route it.
+
 ## 6. Attachments
 
 Reading files people attach to messages needs `files:read` on the relay app

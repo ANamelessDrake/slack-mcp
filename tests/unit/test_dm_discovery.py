@@ -60,9 +60,11 @@ def _put_message(table, channel, ts, text="hi", user="U09GPLJ6W84", agent_id="")
 class FakeAgentClient:
     """Stands in for the agent's Slack app: opens DMs and lists them."""
 
-    def __init__(self, dm_map=None, ims=None):
+    def __init__(self, dm_map=None, ims=None, mpims=None, members=None):
         self.dm_map = dm_map or {}
         self.ims = ims or []
+        self.mpims = mpims or []
+        self.member_map = members or {}
         self.open_calls = []
 
     def conversations_open(self, users):
@@ -70,8 +72,15 @@ class FakeAgentClient:
         return {"channel": {"id": self.dm_map[users]}}
 
     def conversations_list(self, **kwargs):
-        assert kwargs.get("types") == "im", "DM listing must ask Slack for im types"
-        return {"channels": self.ims, "response_metadata": {"next_cursor": ""}}
+        assert kwargs.get("types") == "im,mpim", "listing must ask for direct and group DMs"
+        channels = self.ims + [{**m, "is_mpim": True} for m in self.mpims]
+        return {"channels": channels, "response_metadata": {"next_cursor": ""}}
+
+    def conversations_members(self, **kwargs):
+        return {
+            "members": self.member_map.get(kwargs["channel"], []),
+            "response_metadata": {"next_cursor": ""},
+        }
 
 
 # --- Defect 1: silent wrong-target -----------------------------------------
@@ -184,6 +193,35 @@ def test_list_dms_enumerates_without_prior_message(table, monkeypatch):
     assert result["dms"][0]["user_name"] == "Emily"
     assert result["dms"][0]["unread_count"] == 1
     assert result["dms"][0]["last_activity_ts"] == "5.0"
+
+
+def test_list_dms_includes_group_chats(table, monkeypatch):
+    """Group DMs (mpim) the agent is in are enumerated, with their members."""
+    fake = FakeAgentClient(
+        ims=[{"id": "D1", "user": "U1"}],
+        mpims=[{"id": "G0GROUP"}],
+        members={"G0GROUP": ["U1", "U2", "UWILMABOT"]},
+    )
+    monkeypatch.setattr(conversations, "agent_client", lambda _: fake)
+    names = {"U1": "Emily", "U2": "Susan", "UWILMABOT": "WILMA"}
+    monkeypatch.setattr(ld, "_user_name", lambda uid: names.get(uid, ""))
+    _put_message(table, "G0GROUP", "9.0", text="group hello")
+
+    result = ld.list_dms()
+
+    assert result["ok"] is True
+    group = next(d for d in result["dms"] if d["id"] == "G0GROUP")
+    assert group["is_group_chat"] is True
+    assert group["user"] == ""
+    assert [m["name"] for m in group["members"]] == ["Emily", "Susan", "WILMA"]
+    assert "Emily" in group["user_name"] and "Susan" in group["user_name"]
+    assert group["unread_count"] == 1
+    assert group["last_activity_ts"] == "9.0"
+    # One-to-one DMs still shape correctly alongside group chats
+    dm = next(d for d in result["dms"] if d["id"] == "D1")
+    assert dm["is_group_chat"] is False
+    assert dm["user"] == "U1"
+    assert [m["id"] for m in dm["members"]] == ["U1"]
 
 
 def test_list_dms_unread_excludes_own_messages(table, monkeypatch):

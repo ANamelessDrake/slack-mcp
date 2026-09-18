@@ -1,4 +1,4 @@
-from sharedModules.conversations import list_dm_conversations
+from sharedModules.conversations import list_dm_conversations, mpim_member_ids
 from sharedModules.dynamo import (
     cache_user,
     get_cached_user,
@@ -17,17 +17,22 @@ UNREAD_SCAN_LIMIT = 50
 
 
 def list_dms() -> dict:
-    """List your direct-message conversations and who each one is with.
+    """List your direct and group message conversations and who is in each.
 
-    Use this whenever you need a DM's conversation ID (D0123456789) or want to
-    see which people have messages waiting that you have not read. Slack's
-    channel listing cannot enumerate DMs, so list_channels and find_channel will
-    never show them: this is the only tool that does.
+    Use this whenever you need a DM's conversation ID (D0123456789), a group DM's
+    ID (G0123456789), or want to see which conversations have messages waiting
+    that you have not read. Slack's channel listing cannot enumerate DMs or group
+    DMs, so list_channels and find_channel will never show them: this is the only
+    tool that does.
 
-    Each entry has the DM's `id`, the other person's `user` ID and `user_name`,
-    `last_activity_ts` (empty when nothing is stored for that conversation yet),
-    and `unread_count`, meaning how many of their messages sit after your
-    check_messages read position, counted up to 50. Most recent activity first.
+    Each entry has the conversation `id`, `is_group_chat` (true for a
+    multi-person group DM), and `members`, a list of {id, name} for the people in
+    it. For a one-to-one DM, `user` and `user_name` name the other person and
+    `members` has that one person; for a group DM, `user` is empty and
+    `user_name` joins the members' names. Each entry also has `last_activity_ts`
+    (empty when nothing is stored yet) and `unread_count`, how many messages from
+    others sit after your check_messages read position, counted up to 50. Most
+    recent activity first.
     """
     agent_id = current_agent_id()
     try:
@@ -40,20 +45,42 @@ def list_dms() -> dict:
         channel = conv["id"]
         pending = messages_after(channel, get_cursor(agent_id, channel), UNREAD_SCAN_LIMIT)
         latest = recent_messages(channel, 1)
+        if conv["is_group"]:
+            members = _group_members(agent_id, channel)
+            user = ""
+            user_name = ", ".join(m["name"] for m in members if m["name"])
+        elif conv["user"]:
+            members = [{"id": conv["user"], "name": _user_name(conv["user"])}]
+            user = conv["user"]
+            user_name = members[0]["name"]
+        else:
+            members, user, user_name = [], "", ""
         dms.append(
             {
                 "id": channel,
-                "user": conv["user"],
-                "user_name": _user_name(conv["user"]),
+                "is_group_chat": conv["is_group"],
+                "user": user,
+                "user_name": user_name,
+                "members": members,
                 "last_activity_ts": latest[-1].get("ts", "") if latest else "",
                 # Our own echoes are not unread mail
                 "unread_count": sum(1 for m in pending if m.get("agent_id", "") != agent_id),
             }
         )
 
-    # Quiet and never-used DMs sort to the bottom, where they belong
+    # Quiet and never-used conversations sort to the bottom, where they belong
     dms.sort(key=lambda d: d["last_activity_ts"] or "", reverse=True)
     return {"ok": True, "dms": dms}
+
+
+def _group_members(agent_id: str, channel: str) -> list[dict]:
+    """The {id, name} of everyone in a group DM. Best-effort: a listing should
+    not fail wholesale because one group's membership could not be read."""
+    try:
+        ids = mpim_member_ids(agent_id, channel)
+    except SlackApiError:
+        return []
+    return [{"id": uid, "name": _user_name(uid)} for uid in ids]
 
 
 def _user_name(user_id: str) -> str:

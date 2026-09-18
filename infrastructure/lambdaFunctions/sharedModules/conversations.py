@@ -75,29 +75,63 @@ def resolve_conversation(channel: str, agent_id: str) -> str:
 
 
 def list_dm_conversations(agent_id: str) -> list[dict]:
-    """Every DM conversation this agent's Slack app is part of, as {id, user}.
+    """Every direct and group DM this agent's Slack app is part of.
 
-    Uses the agent's own token: a DM is between the person and this agent app, so
-    the relay app is not a member of it and cannot see it.
+    Each entry is {id, user, is_group}. A one-to-one DM carries the other
+    person's `user` with is_group False; a group DM (multi-person DM, id starting
+    with G) carries user "" with is_group True, and its members are fetched
+    separately via mpim_member_ids only when a caller needs them, so a plain DM
+    lookup stays a single API call. Uses the agent's own token: these are the
+    agent's conversations, and the relay app is not a member of them (and, for a
+    group DM, cannot be added after the group is created).
     """
     client = agent_client(agent_id)
     conversations: list[dict] = []
     cursor = None
     while True:
-        kwargs = {"types": "im", "exclude_archived": True, "limit": PAGE_LIMIT}
+        kwargs = {"types": "im,mpim", "exclude_archived": True, "limit": PAGE_LIMIT}
         if cursor:
             kwargs["cursor"] = cursor
         resp = client.conversations_list(**kwargs)
         for conv in resp["channels"]:
             if conv.get("is_user_deleted"):
                 continue
-            conversations.append({"id": conv["id"], "user": conv.get("user", "")})
+            if conv.get("is_mpim"):
+                conversations.append({"id": conv["id"], "user": "", "is_group": True})
+            else:
+                conversations.append(
+                    {"id": conv["id"], "user": conv.get("user", ""), "is_group": False}
+                )
         cursor = (resp.get("response_metadata") or {}).get("next_cursor") or None
         if not cursor:
             break
     return conversations
 
 
+def mpim_member_ids(agent_id: str, channel: str) -> list[str]:
+    """The user ids in a group DM, via the agent's token (the agent is a member).
+
+    A separate call because conversations.list does not return mpim members, and
+    a plain DM listing should not pay for it. Includes the agent's own bot user.
+    """
+    client = agent_client(agent_id)
+    members: list[str] = []
+    cursor = None
+    while True:
+        kwargs = {"channel": channel, "limit": PAGE_LIMIT}
+        if cursor:
+            kwargs["cursor"] = cursor
+        resp = client.conversations_members(**kwargs)
+        members.extend(resp.get("members", []))
+        cursor = (resp.get("response_metadata") or {}).get("next_cursor") or None
+        if not cursor:
+            break
+    return members
+
+
 def user_dm_index(agent_id: str) -> dict[str, str]:
-    """user ID -> existing DM ID. Opens nothing, so it is safe to call on lookups."""
+    """user ID -> existing DM ID. Opens nothing, so it is safe to call on lookups.
+
+    Group DMs carry no single user, so they fall out of this one-to-one index.
+    """
     return {c["user"]: c["id"] for c in list_dm_conversations(agent_id) if c["user"]}

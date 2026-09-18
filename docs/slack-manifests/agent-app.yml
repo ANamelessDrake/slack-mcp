@@ -20,6 +20,10 @@ oauth_config:
       # Posting file attachments with send_message (outbound uploads).
       - files:write
       - im:write
+      # Group DMs (multi-person DMs): the agent participates directly and the
+      # relay is not a member, so the agent's own app reads their history.
+      - mpim:history
+      - mpim:read
       # Only needed for two-way DMs: the relay cannot see files in an
       # agent's DM, so the agent reads its own DM attachments.
       - files:read
@@ -27,10 +31,12 @@ settings:
   org_deploy_enabled: false
   socket_mode_enabled: false
   token_rotation_enabled: false
-  # Two-way DMs: uncomment after storing this app's signing secret
+  # Two-way DMs and group DMs: uncomment after storing this app's signing secret
   # ({Env}-{Project}-SigningSecret-<agent_id>) so ingest can verify the
-  # URL-verification ping. Same request URL as the relay app.
+  # URL-verification ping. Same request URL as the relay app. message.im covers
+  # one-to-one DMs; message.mpim covers group DMs the agent is a member of.
   # event_subscriptions:
   #   request_url: https://REPLACE-WITH-INGEST-FUNCTION-URL/
   #   bot_events:
   #     - message.im
+  #     - message.mpim

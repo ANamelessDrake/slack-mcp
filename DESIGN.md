@@ -214,8 +214,10 @@ delivery per message.
   ingest Function URL; signing secret stored in Secrets Manager and verified on every
   request (HMAC of timestamp + body, 5-minute timestamp window against replay).
 - **Agent apps**: bot scopes `chat:write`, `im:write`, `files:write` (posting file
-  attachments), and `files:read` (reading attachments in the agent's own DMs). No event
-  subscriptions, no request URL, so no signing secret needed beyond the unused default.
+  attachments), `files:read` (reading attachments in the agent's own DMs), and
+  `mpim:history` / `mpim:read` (reading group DMs the agent is a member of). Send-only by
+  default with no event subscriptions or request URL; two-way DMs and group DMs add
+  `message.im` / `message.mpim` on the agent app and then need its signing secret stored.
 - Both are defined by app manifests committed under `docs/slack-manifests/`, so adding
   an agent is: create app from manifest, install to workspace, store the bot token as
   `{Env}-{Project}-BotToken-{agent_id}`, and register the agent (section 5).

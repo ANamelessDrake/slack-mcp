@@ -168,6 +168,23 @@ def test_unregistered_bot_post_stays_bot(ingest):
     assert item["agent_id"] == ""
 
 
+def test_group_dm_message_stored_and_typed(ingest):
+    # A message from the agent's message.mpim subscription: stored like any other,
+    # typed mpim in the channel registry so sweeps pick the group DM up.
+    body = _message_callback(
+        channel="G0GROUP", ts="3.0", text="group hi", user="U1", channel_type="mpim"
+    )
+    ingest.handler(_signed_event(body), None)
+
+    item = _items()[0]
+    assert item["PK"] == "CH#G0GROUP"
+    assert item["sender_type"] == "human"
+
+    table = boto3.resource("dynamodb", region_name="us-east-1").Table("test-messages")
+    reg = table.get_item(Key={"PK": "CHANNELS", "SK": "CH#G0GROUP"})["Item"]
+    assert reg["channel_type"] == "mpim"
+
+
 def test_duplicate_delivery_is_idempotent(ingest):
     body = _message_callback()
     ingest.handler(_signed_event(body), None)
