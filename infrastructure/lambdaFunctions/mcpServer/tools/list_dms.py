@@ -27,7 +27,8 @@ def list_dms() -> dict:
     that does.
 
     Each entry has the conversation `id`, `is_group_chat` (true for a multi-person
-    group DM), and `members`, a list of {id, name} for the people in it. Do not
+    group DM), `name` (the group DM's own name, like "JustWILMA2", empty for a
+    one-to-one DM), and `members`, a list of {id, name} for the people in it. Do not
     infer the kind from the id prefix: a group DM's id may look like a channel id
     (it can start with C, not only G), so rely on `is_group_chat`. For a
     one-to-one DM, `user` and `user_name` name the other person and `members` has
@@ -74,6 +75,7 @@ def list_dms() -> dict:
             {
                 "id": channel,
                 "is_group_chat": conv["is_group"],
+                "name": conv.get("name", ""),
                 "user": user,
                 "user_name": user_name,
                 "members": members,

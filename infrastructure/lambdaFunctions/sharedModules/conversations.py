@@ -112,10 +112,14 @@ def _list_dm_and_group(client, types: str) -> list[dict]:
             if conv.get("is_user_deleted"):
                 continue
             if conv.get("is_mpim"):
-                conversations.append({"id": conv["id"], "user": "", "is_group": True})
+                # Channel-backed group DMs carry a real name (e.g. "JustWILMA2");
+                # surface it so the group is findable by name, not only members.
+                conversations.append(
+                    {"id": conv["id"], "user": "", "is_group": True, "name": conv.get("name", "")}
+                )
             else:
                 conversations.append(
-                    {"id": conv["id"], "user": conv.get("user", ""), "is_group": False}
+                    {"id": conv["id"], "user": conv.get("user", ""), "is_group": False, "name": ""}
                 )
         cursor = (resp.get("response_metadata") or {}).get("next_cursor") or None
         if not cursor:

@@ -200,7 +200,7 @@ def test_list_dms_includes_group_chats(table, monkeypatch):
     """Group DMs (mpim) the agent is in are enumerated, with their members."""
     fake = FakeAgentClient(
         ims=[{"id": "D1", "user": "U1"}],
-        mpims=[{"id": "G0GROUP"}],
+        mpims=[{"id": "G0GROUP", "name": "JustWILMA2"}],
         members={"G0GROUP": ["U1", "U2", "UWILMABOT"]},
     )
     monkeypatch.setattr(conversations, "agent_client", lambda _: fake)
@@ -213,6 +213,7 @@ def test_list_dms_includes_group_chats(table, monkeypatch):
     assert result["ok"] is True
     group = next(d for d in result["dms"] if d["id"] == "G0GROUP")
     assert group["is_group_chat"] is True
+    assert group["name"] == "JustWILMA2"
     assert group["user"] == ""
     assert [m["name"] for m in group["members"]] == ["Emily", "Susan", "WILMA"]
     assert "Emily" in group["user_name"] and "Susan" in group["user_name"]
