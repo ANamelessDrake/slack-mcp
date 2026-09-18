@@ -110,7 +110,10 @@ part of that conversation.
 **Group DMs (multi-person DMs)** work through the agent app, not the relay: the
 relay is not a member of the group, and Slack fixes a group DM's membership at
 creation, so the relay cannot be added afterward. The manifest template already
-requests `mpim:history` and `mpim:read`. To let the agent read a group DM it is
+requests `im:read` (needed for `list_dms` to enumerate one-to-one DMs at all),
+`mpim:history`, and `mpim:read`. An agent app created before these scopes
+existed will not have them; add them under OAuth & Permissions and reinstall, or
+`list_dms` returns a missing_scope error naming what to add. To let the agent read a group DM it is
 in, enable the agent's Event Subscriptions exactly as above and include the
 `message.mpim` bot event alongside `message.im`; the agent posts to the group
 with its normal `chat:write`. The agent must already be a member of the group

@@ -20,8 +20,10 @@ oauth_config:
       # Posting file attachments with send_message (outbound uploads).
       - files:write
       - im:write
+      # Listing the agent's own DMs (list_dms, find_user dm_channel_id).
+      - im:read
       # Group DMs (multi-person DMs): the agent participates directly and the
-      # relay is not a member, so the agent's own app reads their history.
+      # relay is not a member, so the agent's own app lists and reads them.
       - mpim:history
       - mpim:read
       # Only needed for two-way DMs: the relay cannot see files in an

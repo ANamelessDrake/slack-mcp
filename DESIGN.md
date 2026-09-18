@@ -213,9 +213,10 @@ delivery per message.
   `users:read`; event subscriptions `message.channels`, `message.im`; request URL =
   ingest Function URL; signing secret stored in Secrets Manager and verified on every
   request (HMAC of timestamp + body, 5-minute timestamp window against replay).
-- **Agent apps**: bot scopes `chat:write`, `im:write`, `files:write` (posting file
-  attachments), `files:read` (reading attachments in the agent's own DMs), and
-  `mpim:history` / `mpim:read` (reading group DMs the agent is a member of). Send-only by
+- **Agent apps**: bot scopes `chat:write`, `im:write`, `im:read` (listing its own DMs),
+  `files:write` (posting file attachments), `files:read` (reading attachments in the
+  agent's own DMs), and `mpim:history` / `mpim:read` (listing and reading group DMs the
+  agent is a member of). Send-only by
   default with no event subscriptions or request URL; two-way DMs and group DMs add
   `message.im` / `message.mpim` on the agent app and then need its signing secret stored.
 - Both are defined by app manifests committed under `docs/slack-manifests/`, so adding

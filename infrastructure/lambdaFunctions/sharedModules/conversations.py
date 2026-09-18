@@ -14,6 +14,8 @@ arrived in, which is circular exactly when the problem is a message you missed.
 
 from functools import lru_cache
 
+from slack_sdk.errors import SlackApiError
+
 from sharedModules.slack import agent_client
 
 # Conversations that can be read: public channel, private group, direct message.
@@ -84,12 +86,25 @@ def list_dm_conversations(agent_id: str) -> list[dict]:
     lookup stays a single API call. Uses the agent's own token: these are the
     agent's conversations, and the relay app is not a member of them (and, for a
     group DM, cannot be added after the group is created).
+
+    Listing DMs needs im:read, and listing group DMs needs mpim:read. If mpim:read
+    is absent the group DMs are omitted rather than failing the whole listing; if
+    im:read is also absent the missing_scope propagates for the caller to report.
     """
     client = agent_client(agent_id)
+    try:
+        return _list_dm_and_group(client, "im,mpim")
+    except SlackApiError as e:
+        if e.response.get("error") == "missing_scope":
+            return _list_dm_and_group(client, "im")
+        raise
+
+
+def _list_dm_and_group(client, types: str) -> list[dict]:
     conversations: list[dict] = []
     cursor = None
     while True:
-        kwargs = {"types": "im,mpim", "exclude_archived": True, "limit": PAGE_LIMIT}
+        kwargs = {"types": types, "exclude_archived": True, "limit": PAGE_LIMIT}
         if cursor:
             kwargs["cursor"] = cursor
         resp = client.conversations_list(**kwargs)

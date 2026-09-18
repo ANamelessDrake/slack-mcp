@@ -15,6 +15,7 @@ import tools.list_dms as ld
 import tools.read_history as rh
 from moto import mock_aws
 from sharedModules import conversations, dynamo
+from slack_sdk.errors import SlackApiError
 
 
 @pytest.fixture()
@@ -72,7 +73,7 @@ class FakeAgentClient:
         return {"channel": {"id": self.dm_map[users]}}
 
     def conversations_list(self, **kwargs):
-        assert kwargs.get("types") == "im,mpim", "listing must ask for direct and group DMs"
+        assert kwargs.get("types") in ("im,mpim", "im"), "listing must ask for DM types"
         channels = self.ims + [{**m, "is_mpim": True} for m in self.mpims]
         return {"channels": channels, "response_metadata": {"next_cursor": ""}}
 
@@ -222,6 +223,46 @@ def test_list_dms_includes_group_chats(table, monkeypatch):
     assert dm["is_group_chat"] is False
     assert dm["user"] == "U1"
     assert [m["id"] for m in dm["members"]] == ["U1"]
+
+
+def test_list_dms_falls_back_to_im_when_mpim_scope_missing(table, monkeypatch):
+    """A missing mpim:read must not take the one-to-one DM listing down with it."""
+
+    class ScopeGatedAgentClient:
+        def __init__(self, ims):
+            self.ims = ims
+
+        def conversations_list(self, **kwargs):
+            if kwargs["types"] == "im,mpim":
+                raise SlackApiError("missing_scope", {"error": "missing_scope"})
+            return {"channels": self.ims, "response_metadata": {"next_cursor": ""}}
+
+    monkeypatch.setattr(
+        conversations, "agent_client", lambda _: ScopeGatedAgentClient([{"id": "D1", "user": "U1"}])
+    )
+    monkeypatch.setattr(ld, "_user_name", lambda uid: "Emily")
+
+    result = ld.list_dms()
+
+    assert result["ok"] is True
+    assert [d["id"] for d in result["dms"]] == ["D1"]
+    assert result["dms"][0]["is_group_chat"] is False
+
+
+def test_list_dms_reports_missing_scope_actionably(table, monkeypatch):
+    """No DM read scope at all yields guidance, not a bare 'missing_scope'."""
+
+    class NoScopeAgentClient:
+        def conversations_list(self, **kwargs):
+            raise SlackApiError("missing_scope", {"error": "missing_scope"})
+
+    monkeypatch.setattr(conversations, "agent_client", lambda _: NoScopeAgentClient())
+
+    result = ld.list_dms()
+
+    assert result["ok"] is False
+    assert "im:read" in result["error"]
+    assert "mpim:read" in result["error"]
 
 
 def test_list_dms_unread_excludes_own_messages(table, monkeypatch):

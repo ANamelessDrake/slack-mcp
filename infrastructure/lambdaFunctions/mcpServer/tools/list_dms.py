@@ -38,6 +38,15 @@ def list_dms() -> dict:
     try:
         conversations = list_dm_conversations(agent_id)
     except SlackApiError as e:
+        if e.response.get("error") == "missing_scope":
+            return {
+                "ok": False,
+                "error": (
+                    "list_dms needs the im:read scope (and mpim:read to include group "
+                    "DMs) on this agent's Slack app. Add them under OAuth & Permissions "
+                    "and reinstall the app."
+                ),
+            }
         return {"ok": False, "error": _slack_error(e)}
 
     dms = []
