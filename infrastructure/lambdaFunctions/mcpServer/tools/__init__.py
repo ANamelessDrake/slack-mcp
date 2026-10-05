@@ -23,12 +23,14 @@ from . import (
     read_history,
     read_thread,
     send_message,
+    start_file_upload,
     wait_for_messages,
 )
 
 
 def register_all(mcp: FastMCP) -> None:
     mcp.tool()(send_message.send_message)
+    mcp.tool()(start_file_upload.start_file_upload)
     mcp.tool()(check_messages.check_messages)
     mcp.tool()(wait_for_messages.wait_for_messages)
     mcp.tool()(read_history.read_history)

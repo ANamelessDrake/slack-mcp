@@ -14,6 +14,7 @@ class FakeClient:
         self.error = error
         self.dm_channel = dm_channel
         self.calls = []
+        self._upload_channel = None
 
     def _call(self, method, **kwargs):
         self.calls.append((method, kwargs))
@@ -35,7 +36,32 @@ class FakeClient:
         return {"channel": {"id": self.dm_channel}}
 
     def files_upload_v2(self, **kwargs):
+        self._upload_channel = kwargs.get("channel")
         return self._call("files.upload_v2", **kwargs)
+
+    def files_getUploadURLExternal(self, **kwargs):
+        self.calls.append(("files.getUploadURLExternal", kwargs))
+        if self.error:
+            raise self.error
+        return {"ok": True, "upload_url": "https://files.slack.com/upload/x", "file_id": "F_NEW"}
+
+    def files_completeUploadExternal(self, **kwargs):
+        self._upload_channel = kwargs.get("channel_id")
+        self.calls.append(("files.completeUploadExternal", kwargs))
+        if self.error:
+            raise self.error
+        f = kwargs["files"][0]
+        return {"ok": True, "files": [{"id": f["id"], "title": f.get("title", "")}]}
+
+    def files_info(self, **kwargs):
+        # The share ts resolves on the first poll; mirrors Slack populating it
+        # shortly after the upload response, keyed by the channel just posted to.
+        self.calls.append(("files.info", kwargs))
+        ch = self._upload_channel or "C123"
+        return {
+            "ok": True,
+            "file": {"id": kwargs.get("file", ""), "shares": {"public": {ch: [{"ts": "77.0"}]}}},
+        }
 
     def users_list(self, **kwargs):
         return self._call("users.list", **kwargs)
@@ -258,6 +284,72 @@ def test_file_upload_respects_guardrail_veto(monkeypatch):
 
     assert result == {"ok": False, "error": "Turn budget reached"}
     assert all(method != "files.upload_v2" for method, _ in fake.calls)
+
+
+def test_file_upload_resolves_ts_via_files_info(monkeypatch):
+    # The upload response omits the share, so the ts comes from a files.info poll
+    _no_veto(monkeypatch)
+    fake = FakeClient(response={"files": [{"id": "F1", "name": "report.pdf"}]})
+    monkeypatch.setattr(sm, "agent_client", lambda agent_id: fake)
+
+    content = base64.b64encode(b"data").decode()
+    result = sm.send_message("C123", "x", file_base64=content, file_name="report.pdf")
+
+    assert result["ok"] is True
+    assert result["ts"] == "77.0"  # resolved, not left empty
+    assert any(method == "files.info" for method, _ in fake.calls)
+
+
+def test_start_file_upload_returns_url_and_id(monkeypatch):
+    import tools.start_file_upload as sfu
+
+    fake = FakeClient()
+    monkeypatch.setattr(sfu, "agent_client", lambda agent_id: fake)
+
+    result = sfu.start_file_upload("big.pdf", 9_000_000)
+
+    assert result["ok"] is True
+    assert result["upload_url"] == "https://files.slack.com/upload/x"
+    assert result["file_id"] == "F_NEW"
+    method, kwargs = fake.calls[0]
+    assert method == "files.getUploadURLExternal"
+    assert kwargs["filename"] == "big.pdf"
+    assert kwargs["length"] == 9_000_000
+
+
+def test_start_file_upload_validates_inputs(monkeypatch):
+    import tools.start_file_upload as sfu
+
+    monkeypatch.setattr(sfu, "agent_client", lambda agent_id: FakeClient())
+    assert sfu.start_file_upload("", 10)["ok"] is False
+    assert sfu.start_file_upload("big.pdf", 0)["ok"] is False
+
+
+def test_send_message_completes_large_upload(monkeypatch):
+    _no_veto(monkeypatch)
+    fake = FakeClient()
+    monkeypatch.setattr(sm, "agent_client", lambda agent_id: fake)
+
+    result = sm.send_message("C123", "here it is", uploaded_file_id="F_BIG", file_name="big.pdf")
+
+    assert result["ok"] is True
+    assert result["channel"] == "C123"
+    assert result["file_id"] == "F_BIG"
+    assert result["ts"] == "77.0"
+    methods = [m for m, _ in fake.calls]
+    assert "files.completeUploadExternal" in methods
+    assert "files.upload_v2" not in methods
+    complete = next(kw for m, kw in fake.calls if m == "files.completeUploadExternal")
+    assert complete["channel_id"] == "C123"
+    assert complete["files"] == [{"id": "F_BIG", "title": "big.pdf"}]
+    assert complete["initial_comment"] == "here it is"
+
+
+def test_send_message_rejects_both_file_inputs():
+    content = base64.b64encode(b"x").decode()
+    result = sm.send_message("C123", "x", file_base64=content, uploaded_file_id="F1")
+    assert result["ok"] is False
+    assert "not both" in result["error"]
 
 
 def test_find_user_matches_and_paginates(monkeypatch):

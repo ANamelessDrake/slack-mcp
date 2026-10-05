@@ -1,6 +1,8 @@
 import base64
 import binascii
+import logging
 import os
+import time
 
 from sharedModules.dynamo import channel_known, register_channel
 from sharedModules.files import max_bytes
@@ -8,6 +10,13 @@ from sharedModules.guardrails import agent_send_veto
 from sharedModules.identity import current_agent_id
 from sharedModules.slack import agent_client
 from slack_sdk.errors import SlackApiError
+
+log = logging.getLogger()
+
+# files_upload_v2 returns before Slack reflects the share, so the upload
+# response usually lacks the message ts. Poll files.info briefly to resolve it.
+SHARE_TS_RETRIES = 6
+SHARE_TS_DELAY = 0.25
 
 # Appended automatically to the first message an agent ever sends into a DM
 # conversation, so people know what to expect from their replies. This is a
@@ -27,6 +36,7 @@ def send_message(
     thread_ts: str = "",
     file_base64: str = "",
     file_name: str = "",
+    uploaded_file_id: str = "",
 ) -> dict:
     """Send a message to a Slack channel, a thread, or a person's DMs, with an
     optional file attachment.
@@ -38,15 +48,22 @@ def send_message(
     message. Returns the new message's `ts`, which doubles as the `thread_ts`
     for reading or replying to its thread.
 
-    To attach a file, pass its bytes as `file_base64` (base64-encoded) together
-    with `file_name` (the display name including extension, for example
-    "report.pdf"); `text` becomes the comment posted with the file. This works
-    the same in channels, threads, and DMs, and the size limit matches inbound
-    files (max_file_download_mb). The server has no access to your disk, so the
-    bytes must travel in the call itself: read the file, base64-encode it, and
-    pass the string. Do not re-upload a file that is already in Slack; link to
-    it instead. When a file is attached the response also carries `file_id`, and
-    `ts` may be empty because Slack shares the file asynchronously.
+    Attaching a file, two ways depending on size:
+
+    - Small file (up to about 4 MB): pass its bytes as `file_base64`
+      (base64-encoded) with `file_name` (the display name including extension,
+      like "report.pdf"). The bytes ride in this request, so this is capped
+      around 4 MB; a larger file is rejected before it reaches the server. `text`
+      becomes the comment posted with the file.
+    - Larger file: do not use `file_base64`. First call `start_file_upload` to
+      get an upload URL, POST the raw bytes to that URL yourself (that goes
+      straight to Slack, with no size cap), then call send_message with
+      `uploaded_file_id` set to the file id it returned. `text` becomes the
+      comment, and `file_name` sets the title.
+
+    Either way the response carries `file_id`; do not re-upload a file already in
+    Slack. The server has no access to your disk, so for `file_base64` you read
+    and encode the bytes yourself.
 
     To @mention a person inside the text, write <@THEIR_USER_ID>, for example
     "Hey <@U0123456789>, can you review this?" (get the ID from find_user).
@@ -58,6 +75,13 @@ def send_message(
     files:write scope and to be a member of that channel, the same membership
     that posting a message there already requires.
     """
+    if uploaded_file_id and file_base64:
+        return {
+            "ok": False,
+            "error": "pass either file_base64 (small files) or uploaded_file_id "
+            "(large files via start_file_upload), not both",
+        }
+
     agent_id = current_agent_id()
     client = agent_client(agent_id)
     target = channel
@@ -81,9 +105,20 @@ def send_message(
         first_dm_contact = target.startswith("D") and not thread_ts and not channel_known(target)
         body = text + DM_INTRO_NOTE if first_dm_contact else text
 
-        if file_bytes:
+        if uploaded_file_id:
+            # Large-file path: the bytes were already PUT to Slack via
+            # start_file_upload, so just complete the share into this channel.
+            resp = client.files_completeUploadExternal(
+                files=[_completion_file(uploaded_file_id, file_name)],
+                channel_id=target,
+                **({"initial_comment": body} if body else {}),
+                **({"thread_ts": thread_ts} if thread_ts else {}),
+            )
+            result = _upload_result(client, resp, target, agent_id, file_name)
+            posted_channel = target
+        elif file_bytes:
             resp = _upload(client, target, body, thread_ts, file_bytes, upload_name)
-            result = _upload_result(resp, target, agent_id, upload_name)
+            result = _upload_result(client, resp, target, agent_id, upload_name)
             posted_channel = target
         else:
             kwargs = {
@@ -105,6 +140,10 @@ def send_message(
             }
             posted_channel = resp["channel"]
     except SlackApiError as e:
+        # Upload and send failures are otherwise invisible: the tool returns the
+        # error to the caller but nothing reaches the logs. Log it so a report of
+        # "unreliable" uploads can be diagnosed from CloudWatch.
+        log.warning("send_message failed (file=%s): %s", bool(file_bytes), _slack_error(e))
         return {"ok": False, "error": _slack_error(e)}
 
     # Register DMs at send time: agents without their own DM event subscription
@@ -153,16 +192,48 @@ def _upload(client, channel: str, comment: str, thread_ts: str, data: bytes, fil
     return client.files_upload_v2(**kwargs)
 
 
-def _upload_result(resp, channel: str, agent_id: str, fallback_name: str) -> dict:
+def _completion_file(file_id: str, file_name: str) -> dict:
+    """The files entry for completeUploadExternal. Title is optional; use the
+    display name when one was given."""
+    title = os.path.basename(file_name.strip()) or file_name.strip()
+    return {"id": file_id, "title": title} if title else {"id": file_id}
+
+
+def _upload_result(client, resp, channel: str, agent_id: str, fallback_name: str) -> dict:
     file_obj = _first_file(resp)
     return {
         "ok": True,
         "channel": channel,
-        "ts": _share_ts(file_obj, channel),
+        "ts": _resolve_share_ts(client, file_obj, channel),
         "agent_id": agent_id,
         "file_id": str(file_obj.get("id", "")),
         "file_name": str(file_obj.get("name") or fallback_name),
     }
+
+
+def _resolve_share_ts(client, file_obj: dict, channel: str) -> str:
+    """The ts of the file's message, resolved reliably.
+
+    files_upload_v2 returns before the share is reflected, so its response
+    usually omits the ts. When it does, poll files.info briefly until the share
+    appears. The file posts regardless, so if the ts never shows, give up quietly
+    and return "" rather than failing a send that actually succeeded."""
+    ts = _share_ts(file_obj, channel)
+    if ts:
+        return ts
+    file_id = str(file_obj.get("id", ""))
+    if not file_id:
+        return ""
+    for _ in range(SHARE_TS_RETRIES):
+        try:
+            info = client.files_info(file=file_id)
+        except SlackApiError:
+            return ""
+        ts = _share_ts(info.get("file") or {}, channel)
+        if ts:
+            return ts
+        time.sleep(SHARE_TS_DELAY)
+    return ""
 
 
 def _first_file(resp) -> dict:
