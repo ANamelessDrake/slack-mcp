@@ -12,6 +12,7 @@ where consecutive requests may hit different containers.
 import logging
 
 from auth.bearer import BearerAuthMiddleware
+from auth.ipgate import IpAllowlistMiddleware
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 from sharedModules.files import (
@@ -42,7 +43,12 @@ mcp = FastMCP(
 register_all(mcp)
 
 app = mcp.streamable_http_app()
+# Added last = runs first: IP check, then bearer. Bearer is the primary
+# auth; the IP allowlist is defense-in-depth that catches a WAF
+# misconfiguration (the shared MCP WAF in SharedWafStack is the edge
+# gate).
 app.add_middleware(BearerAuthMiddleware)
+app.add_middleware(IpAllowlistMiddleware)
 
 
 async def health(_request):
