@@ -1,6 +1,5 @@
-from aws_cdk import BundlingOptions, CfnOutput, Duration, Fn, Stack
+from aws_cdk import BundlingOptions, CfnOutput, Duration, Stack
 from aws_cdk import aws_lambda as _lambda
-from aws_cdk import aws_wafv2 as wafv2
 from constructs import Construct
 
 # Lambda Web Adapter public layer (see https://github.com/awslabs/aws-lambda-web-adapter)
@@ -100,7 +99,6 @@ class LambdaFunctionsStack(Stack):
                 "EVENTS_REALTIME_ENDPOINT": events.realtime_endpoint,
                 "EVENTS_HTTP_HOST": events.http_host,
                 "EVENTS_API_KEY": events.api_key,
-                "ALLOWED_CLIENT_HOSTNAMES": ",".join(config.get("allowed_client_hostnames", [])),
             },
         )
 
@@ -116,18 +114,6 @@ class LambdaFunctionsStack(Stack):
             auth_type=_lambda.FunctionUrlAuthType.NONE,
             invoke_mode=_lambda.InvokeMode.RESPONSE_STREAM,
         )
-
-        # Attach the shared MCP WAF WebACL to the MCP Function URL only.
-        # The Slack Events ingest Function URL below must stay reachable
-        # from Slack's servers, so it intentionally stays un-attached.
-        # The in-Lambda IpAllowlistMiddleware is kept as defense-in-depth.
-        if config.get("shared_waf_enabled", False):
-            wafv2.CfnWebACLAssociation(
-                self,
-                "McpFunctionUrlWafAssociation",
-                web_acl_arn=Fn.import_value("mcp-shared-WebAclArn"),
-                resource_arn=self.mcp_function.function_arn,
-            )
 
         # Events API receiver: stdlib + boto3 only, no bundling required.
         # Signature verification is its authentication, so the URL is public.
